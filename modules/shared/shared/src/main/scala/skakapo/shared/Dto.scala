@@ -174,6 +174,12 @@ object ServiceKind {
   val Github = "github"
   val Other  = "other"
   val all: List[String] = List(Sbirds, Github, Other)
+  /** sBirds シリーズの OAuth で求めるスコープの既定（skereru はメールの送信を send として分けている. sruru は管理の基盤なので read だけ）. */
+  def sbirdsScopes(key: String): String = key match {
+    case "skereru" => "read write send"
+    case "sruru"   => "read"
+    case _         => "read write"
+  }
   def label(k: String): String = k match {
     case Sbirds => "sBirds シリーズ"
     case Github => "GitHub"

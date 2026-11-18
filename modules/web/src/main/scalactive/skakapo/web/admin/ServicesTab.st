@@ -34,7 +34,7 @@ def fillDefaults(e: Edit): Unit = {
   if (b.nonEmpty) {
     if (e.kind.v == ServiceKind.Sbirds) {
       e.mcpUrl := b + "/mcp"; e.authorizeUrl := b + "/oauth/authorize"; e.tokenUrl := b + "/oauth/token"
-      if (e.scopes.v.isEmpty) e.scopes := "read write"
+      if (e.scopes.v.isEmpty) e.scopes := ServiceKind.sbirdsScopes(e.key.v.trim)
     } else if (e.kind.v == ServiceKind.Github) {
       e.authorizeUrl := b + "/login/oauth/authorize"; e.tokenUrl := b + "/login/oauth/access_token"; e.mcpUrl := ""
       if (e.scopes.v.isEmpty) e.scopes := "repo"

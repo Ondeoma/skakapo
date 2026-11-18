@@ -6,7 +6,7 @@ import skakapo.shared.*
 object Defaults {
 
   /** sBirds シリーズ（URL と OAuth のクライアントは、管理者が環境に合わせて入れる. 入れるまでは無効）. */
-  final case class ServiceSeed(key: String, name: String, kind: String, description: String, oauth: Boolean = true, mcp: Boolean = true)
+  final case class ServiceSeed(key: String, name: String, kind: String, description: String, mcp: Boolean = true)
 
   val services: List[ServiceSeed] = List(
     ServiceSeed("skea", "skea", ServiceKind.Sbirds, "プロジェクト管理（タスク・ボード・スプリント・ヘルプデスク）。不具合や依頼の起票先。"),
@@ -15,18 +15,18 @@ object Defaults {
     ServiceSeed("skawau", "skawau", ServiceKind.Sbirds, "ファイルの保管と共有。"),
     ServiceSeed("skaka", "skaka", ServiceKind.Sbirds, "ビデオ会議（会議室・録画）。"),
     ServiceSeed("skuaka", "skuaka", ServiceKind.Sbirds, "予定表（カレンダー・会議室の予約）。"),
-    ServiceSeed("skereru", "skereru", ServiceKind.Sbirds, "メール（Web メール・アドレス帳）。", oauth = false),
+    ServiceSeed("skereru", "skereru", ServiceKind.Sbirds, "メール（Web メール・アドレス帳）。"),
     ServiceSeed("skorimako", "skorimako", ServiceKind.Sbirds, "観測（ログ・メトリクス・トレース・アラート）。不具合の調査でエラーやトレースを調べる。"),
-    ServiceSeed("skotare", "skotare", ServiceKind.Sbirds, "外部監視とステータスページ（障害・稼働率）。", oauth = false),
+    ServiceSeed("skotare", "skotare", ServiceKind.Sbirds, "外部監視とステータスページ（障害・稼働率）。"),
     ServiceSeed("smohua", "smohua", ServiceKind.Sbirds, "フォーム（アンケート・申し込み・回答の集計）。"),
-    ServiceSeed("sruru", "sruru", ServiceKind.Sbirds, "ID 管理（ユーザー・グループ・OIDC/SAML のアプリ）。", oauth = false),
+    ServiceSeed("sruru", "sruru", ServiceKind.Sbirds, "ID 管理（ユーザー・グループ・OIDC/SAML のアプリ）。"),
     ServiceSeed("github", "GitHub", ServiceKind.Github, "Git のリポジトリ（コードの取り出し・push・プルリクエスト）。", mcp = false)
   )
 
   /** sBirds シリーズの OAuth の入口（各サービスで共通）. */
   def oauthFor(seed: ServiceSeed, baseUrl: String): OAuthConfig =
     if (seed.kind == ServiceKind.Github) OAuthConfig("https://github.com/login/oauth/authorize", "https://github.com/login/oauth/access_token", "", "repo")
-    else if (seed.oauth && baseUrl.nonEmpty) OAuthConfig(s"$baseUrl/oauth/authorize", s"$baseUrl/oauth/token", "", "read write")
+    else if (baseUrl.nonEmpty) OAuthConfig(s"$baseUrl/oauth/authorize", s"$baseUrl/oauth/token", "", ServiceKind.sbirdsScopes(seed.key))
     else OAuthConfig()
 
   val agent: AgentSettings = AgentSettings(baseContext =
