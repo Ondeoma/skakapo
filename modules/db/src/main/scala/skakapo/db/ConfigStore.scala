@@ -182,10 +182,10 @@ final class ConfigStore(xa: Transactor[IO]) extends TxStore(xa):
 
   // ---------------------------------------------------------------- クラウドの資格情報
 
-  private val cloudCols = fr"id, name, provider, config, secret <> '', notes, enabled, access"
-  private type CloudRow = (UUID, String, String, Json, Boolean, String, Boolean, String)
+  private val cloudCols = fr"id, name, provider, config, secret <> '', notes, enabled, access, access_groups"
+  private type CloudRow = (UUID, String, String, Json, Boolean, String, Boolean, String, List[UUID])
   private def cloudDto(r: CloudRow): CloudCredentialDto =
-    CloudCredentialDto(r._1, r._2, r._3, r._4.as[Map[String, String]].getOrElse(Map.empty), r._5, r._6, r._7, access = r._8)
+    CloudCredentialDto(r._1, r._2, r._3, r._4.as[Map[String, String]].getOrElse(Map.empty), r._5, r._6, r._7, access = r._8, groups = r._9)
 
   def cloudCredentials(enabledOnly: Boolean = false): IO[List[CloudCredentialDto]] = tx(
     (fr"select" ++ cloudCols ++ fr"from cloud_credential" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++ fr"order by name")
@@ -201,16 +201,19 @@ final class ConfigStore(xa: Transactor[IO]) extends TxStore(xa):
   def cloudSecret(id: UUID): IO[Option[String]] = tx(sql"select secret from cloud_credential where id = $id".query[String].option)
 
   /** secret: None は変えない（新しく作るときは必須）. */
+  /** groups のときだけ、選んだ種類を保存する. */
+  private def groupsOf(r: CloudCredentialReq): List[UUID] = if r.access == CloudProvider.AccessGroups then r.groups.distinct else Nil
+
   def saveCloudCredential(id: Option[UUID], r: CloudCredentialReq, secret: Option[String]): IO[Either[String, CloudCredentialDto]] = tx {
     val cid = id.getOrElse(UUID.randomUUID())
     val q = id match
       case None =>
-        (fr"""insert into cloud_credential (id, name, provider, config, secret, notes, enabled, access)
-              values ($cid, ${r.name}, ${r.provider}, ${r.config.asJson}, ${secret.getOrElse("")}, ${r.notes}, ${r.enabled}, ${r.access})
+        (fr"""insert into cloud_credential (id, name, provider, config, secret, notes, enabled, access, access_groups)
+              values ($cid, ${r.name}, ${r.provider}, ${r.config.asJson}, ${secret.getOrElse("")}, ${r.notes}, ${r.enabled}, ${r.access}, ${groupsOf(r)})
               on conflict (name) do nothing returning""" ++ cloudCols)
       case Some(_) =>
         fr"""update cloud_credential set name = ${r.name}, provider = ${r.provider}, config = ${r.config.asJson}, notes = ${r.notes},
-             enabled = ${r.enabled}, access = ${r.access}, updated_at = now()""" ++ secret.fold(Fragment.empty)(s => fr", secret = $s") ++
+             enabled = ${r.enabled}, access = ${r.access}, access_groups = ${groupsOf(r)}, updated_at = now()""" ++ secret.fold(Fragment.empty)(s => fr", secret = $s") ++
           fr"where id = $cid and not exists (select 1 from cloud_credential o where o.name = ${r.name} and o.id <> $cid) returning" ++ cloudCols
     q.query[CloudRow].option.map(_.map(cloudDto).toRight(s"名前「${r.name}」の資格情報がすでにあるか、見つかりません"))
   }

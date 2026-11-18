@@ -59,11 +59,17 @@ class PromptSpec extends munit.FunSuite:
     assert(FormCheck.fields(Defaults.requestTypes.flatMap(_.fields).distinctBy(_.name)).isRight)
   }
 
-  test("クラウドの資格情報: 使える人（既定は管理者の依頼だけ）. 無効なものはだれも使えない") {
+  test("クラウドの資格情報: 使える人（既定は管理者の依頼だけ・選んだ利用者の種類）. 無効なものはだれも使えない") {
     val c = CloudCredentialDto(UUID.randomUUID(), "aws", CloudProvider.Aws, Map.empty, true, "", true)
-    assert(c.usableBy(isAdmin = true) && !c.usableBy(isAdmin = false))
-    assert(c.copy(access = CloudProvider.AccessAll).usableBy(isAdmin = false))
-    assert(!c.copy(enabled = false, access = CloudProvider.AccessAll).usableBy(isAdmin = true))
+    val (eng, ops) = (UUID.randomUUID(), UUID.randomUUID())
+    assert(c.usableBy(isAdmin = true, None) && !c.usableBy(isAdmin = false, Some(eng)))
+    assert(c.copy(access = CloudProvider.AccessAll).usableBy(isAdmin = false, None))
+    val g = c.copy(access = CloudProvider.AccessGroups, groups = List(eng))
+    assert(g.usableBy(isAdmin = false, Some(eng)) && !g.usableBy(isAdmin = false, Some(ops)) && !g.usableBy(isAdmin = false, None))
+    assert(g.usableBy(isAdmin = true, None))
+    // groups を選んでいても、access が groups でなければ種類では使えない
+    assert(!g.copy(access = CloudProvider.AccessAdmins).usableBy(isAdmin = false, Some(eng)))
+    assert(!c.copy(enabled = false, access = CloudProvider.AccessAll).usableBy(isAdmin = true, None))
   }
 
   test("利用者の種類: 付けた種類 → IdP のグループ（並び順） → 既定 の順に決まり、前提に回答の決まりが入る") {

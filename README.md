@@ -69,7 +69,7 @@ Scala 3（http4s・doobie・PostgreSQL）、Claude API は [Anthropic の Java S
     - AWS は SigV4 で署名する。Google Cloud はサービスアカウントの鍵から、Azure はサービスプリンシパルから、トークンを発行して付ける
     - 送れるのは、そのクラウドの API のホストだけ（`*.amazonaws.com`・`*.googleapis.com`・`management.azure.com`・`graph.microsoft.com`・`*.vault.azure.net`・`*.core.windows.net` など）。
       AWS の API Gateway（`execute-api`）と S3 の静的サイト（`s3-website`）は、だれでも作れるエンドポイントなので送らない。資格情報ごとに「送ってよいホスト」でさらに絞れる
-    - 資格情報ごとに「使える人」を選ぶ（既定は管理者の依頼だけ。全員の依頼で使わせるときは、読み取り専用などに IAM で絞る）
+    - 資格情報ごとに「使える人」を選ぶ（管理者の依頼だけ・選んだ利用者の種類の依頼・全員の依頼。既定は管理者の依頼だけ。管理者以外にも使わせるときは、読み取り専用などに IAM で絞る）
     - 権限はクラウド側の IAM で絞る。取り返しのつかない操作は、利用者が明示的に頼んだときだけ行い、先に内容を確かめるよう前提で伝える
   - **依頼の画面**: 会話のアーカイブ・削除（一覧からも）、この依頼の使用量（費用とトークン数の合計）。細かい進捗（ツールの呼び出しと結果・作業の状態）は既定で出さず、設定の画面で利用者ごとに表示できる
   - **`record_link`**: 作ったもの（タスク・プルリクエストなど）を、会話の画面の「作ったもの」に残す
@@ -195,7 +195,7 @@ docker build -f deploy/docker/app.Dockerfile -t skakapo .
 ```
 
 登録したら、skakapo の管理画面の「サービス」に、そのサービスの URL・クライアントの ID・シークレットを入れます。
-「URL から既定の入口を入れる」を押すと、`/mcp`・`/oauth/authorize`・`/oauth/token` が入ります。
+種類が sBirds シリーズのとき、「以下の URL を推論して入力」を押すと、`/mcp`・`/oauth/authorize`・`/oauth/token` が入ります。
 
 - **skea**: 不具合の起票とコメントに使います。`scopes` に `write` を入れます（入れないと読み取りだけになり、起票できません）。
 - **skorimako**: 不具合の調査で、エラーのログやトレースを調べます。

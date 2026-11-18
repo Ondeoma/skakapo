@@ -80,11 +80,10 @@ def agentText(x: ServiceDto): String = if (!x.hasAgentToken) "—" else if (x.ag
     </div>
     <div class="table-wrap">
       <table class="list">
-        <thead><tr><th>サービス</th><th>種類</th><th>URL</th><th>連携</th><th>専用アカウント</th><th>ツール</th><th>状態</th><th></th></tr></thead>
+        <thead><tr><th>サービス</th><th>URL</th><th>連携</th><th>専用アカウント</th><th>ツール</th><th>状態</th><th></th></tr></thead>
         <tbody>
           <tr v-for="x in s.list" class="click" @click="open(s, Some(x))">
             <td><b>{{ x.name }}</b> <span class="small muted">{{ x.key }}</span></td>
-            <td>{{ ServiceKind.label(x.kind) }}</td>
             <td class="small">{{ x.baseUrl }}</td>
             <td class="small">{{ oauthState(x) }}</td>
             <td class="small">{{ agentText(x) }}</td>
@@ -102,12 +101,12 @@ def agentText(x: ServiceDto): String = if (!x.hasAgentToken) "—" else if (x.ag
       <div class="row">
         <label class="field"><span>キー（ツールの名前の頭. 英小文字）</span><input type="text" v-model="e.key" placeholder="skea" required></label>
         <label class="field grow"><span>名前</span><input type="text" v-model="e.name" required></label>
-        <label class="field"><span>種類</span><select v-model="e.kind"><option v-for="k in ServiceKind.all" :value="k">{{ ServiceKind.label(k) }}</option></select></label>
+        <label class="field"><span>種類（OAuth の方式・URL の推論に使う）</span><select v-model="e.kind"><option v-for="k in ServiceKind.all" :value="k">{{ ServiceKind.label(k) }}</option></select></label>
         <label class="field"><span>並び順</span><input type="number" v-model="e.position"></label>
       </div>
       <div class="row">
         <label class="field grow"><span>URL</span><input type="url" v-model="e.baseUrl" placeholder="https://skea.example.com"></label>
-        <button type="button" class="ghost small fill" @click="fillDefaults(e)">URL から既定の入口を入れる</button>
+        <button type="button" class="ghost small fill" @click="fillDefaults(e)">以下の URL を推論して入力</button>
       </div>
       <label class="field"><span>MCP の URL（空なら MCP を使わない）</span><input type="url" v-model="e.mcpUrl" placeholder="https://skea.example.com/mcp"></label>
       <label class="field"><span>説明（何をするサービスか. エージェントに伝える）</span><textarea v-model="e.description" rows="2"></textarea></label>

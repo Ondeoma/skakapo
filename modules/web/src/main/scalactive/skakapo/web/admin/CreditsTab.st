@@ -93,7 +93,7 @@ def defaultText(s: State) = s.settings.mapC(_.flatMap(_.agent.defaultUserCapUsd)
             <td>{{ capText(u) }}</td>
             <td class="num">{{ remainText(u) }}</td>
             <td class="num">{{ u.runs.toString }}</td>
-            <td><button class="ghost small">変える</button></td>
+            <td><button class="ghost small">上限変更</button></td>
           </tr>
         </tbody>
       </table>

@@ -103,8 +103,9 @@ final class Runner(sessions: SessionStore, users: UserStore, config: ConfigStore
       case Some(cl) =>
         for
           k0  <- knowledge
+          group <- config.userGroups.map(UserGroups.resolve(u.groupId, u.idpGroups, _))
           // クラウドの資格情報: この利用者が使えるもので、秘密を復号できたものだけ（前提にも、それだけを書く）
-          cloud <- config.enabledCloudCredentialsWithSecret.map(_.filter(_._1.usableBy(u.isAdmin)).flatMap((c, enc) => box.flatMap(_.decrypt(enc)).map(c -> _)))
+          cloud <- config.enabledCloudCredentialsWithSecret.map(_.filter(_._1.usableBy(u.isAdmin, group.map(_.id))).flatMap((c, enc) => box.flatMap(_.decrypt(enc)).map(c -> _)))
           k    = k0.copy(clouds = cloud.map(_._1))
           rt  <- config.requestType(s.requestType)
           all  = k.services.map(_._1)
@@ -112,7 +113,6 @@ final class Runner(sessions: SessionStore, users: UserStore, config: ConfigStore
           (ls, git, broken) = lk
           ms0 <- sessions.transcript(s.id).map(Jsons.decodeTranscript)
           uctx <- config.userContext(u.id)
-          group <- config.userGroups.map(UserGroups.resolve(u.groupId, u.idpGroups, _))
           _   <- sessions.event(s.id, "status", Json.obj("text" -> (if r.attempts > 1 then s"$node が続きから引き継ぎました" else s"$node が作業を始めました").asJson,
                    "node" -> node.asJson))
           _   <- broken.traverse_(b => note(s, "note", s"連携しているサービスのうち、$b"))

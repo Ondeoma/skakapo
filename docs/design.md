@@ -176,7 +176,7 @@
 - 送り先は、そのクラウドの API のホストだけ。AWS は `service.amazonaws.com`・`service.region.amazonaws.com` の形だけで、
   `bucket.s3…`・API Gateway・OpenSearch のドメインなど、だれでも作れる名前が前に付くホストは通さない。
 - S3 は、確かめで分かったアカウント ID で `x-amz-expected-bucket-owner` を付け、自分のアカウントのバケットに限る（アカウント ID の分からない資格情報では送らない）。
-- 資格情報ごとに、送ってよいホスト（`allowedHosts`. `*` は3個まで）と、使える人（`access`. 既定は管理者の依頼だけ）を決められる。
+- 資格情報ごとに、送ってよいホスト（`allowedHosts`. `*` は3個まで）と、使える人（`access`: `admins`・`groups`・`all`. 既定は管理者の依頼だけ。`groups` は `access_groups` に選んだ利用者の種類と管理者の依頼で使える）を決められる。
 
 ### 実行と資源
 

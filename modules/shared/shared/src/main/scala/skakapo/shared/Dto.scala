@@ -300,7 +300,13 @@ object CloudProvider {
   /** 資格情報を使える人. */
   val AccessAdmins = "admins"
   val AccessAll    = "all"
-  def accessLabel(a: String): String = if (a == AccessAll) "全員の依頼" else "管理者の依頼だけ"
+  val AccessGroups = "groups"
+  val accessAll: List[String] = List(AccessAdmins, AccessGroups, AccessAll)
+  def accessLabel(a: String): String = a match {
+    case AccessAll    => "全員の依頼"
+    case AccessGroups => "選んだ種類の利用者の依頼"
+    case _            => "管理者の依頼だけ"
+  }
   def secretFields(p: String): List[(String, String, Boolean)] = p match {
     case Aws   => List(("secretAccessKey", "シークレットアクセスキー", true), ("sessionToken", "セッショントークン（一時的な認証情報のときだけ）", false))
     case Gcp   => List(("serviceAccountJson", "サービスアカウントの鍵（JSON の中身）", true))
@@ -338,14 +344,17 @@ object NilId {
 
 /** クラウドの資格情報（秘密は返さない. hasSecret だけ）. identity は保存したときに確かめた、認証された相手（AWS の ARN など）. */
 final case class CloudCredentialDto(id: UUID, name: String, provider: String, config: Map[String, String], hasSecret: Boolean, notes: String,
-    enabled: Boolean, identity: Option[String] = None, access: String = CloudProvider.AccessAdmins) derives Encoder.AsObject, Decoder {
-  /** その利用者の依頼で使えるか. */
-  def usableBy(isAdmin: Boolean): Boolean = enabled && (isAdmin || access == CloudProvider.AccessAll)
+    enabled: Boolean, identity: Option[String] = None, access: String = CloudProvider.AccessAdmins, groups: List[UUID] = Nil)
+    derives Encoder.AsObject, ConfiguredDecoder {
+  /** その利用者の依頼で使えるか（管理者はいつも使える. groups なら、その利用者の種類が選ばれていれば使える）. */
+  def usableBy(isAdmin: Boolean, group: Option[UUID]): Boolean = enabled && (isAdmin || access == CloudProvider.AccessAll ||
+    (access == CloudProvider.AccessGroups && group.exists(groups.contains)))
 }
 
 /** secrets は秘密の値（変えるときだけ. 新しく作るときは必須. 渡したら全部を置き換える）. */
 final case class CloudCredentialReq(name: String, provider: String, config: Map[String, String] = Map.empty, secrets: Option[Map[String, String]] = None,
-    notes: String = "", enabled: Boolean = true, access: String = CloudProvider.AccessAdmins) derives Encoder.AsObject, ConfiguredDecoder
+    notes: String = "", enabled: Boolean = true, access: String = CloudProvider.AccessAdmins, groups: List[UUID] = Nil)
+    derives Encoder.AsObject, ConfiguredDecoder
 
 /** 共有アカウントの認証の方式. */
 object GitAuthKind {

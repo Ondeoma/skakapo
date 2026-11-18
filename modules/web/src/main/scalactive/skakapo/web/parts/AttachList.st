@@ -32,7 +32,8 @@ def addLabel(props: Props) = props.attach.uploading.mapC(n => if (n > 0) "上げ
 .att.file .nm { font-size: .75rem; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att.file .sz { font-size: .7rem; color: var(--muted); }
 .att .rm { position: absolute; top: 2px; right: 2px; background: var(--surface); padding: 0 .4rem; border-radius: 999px; }
-.att.add { display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); border-style: dashed; font-size: .85rem; }
+.att.add { width: auto; min-width: 96px; padding: 0 .8rem; white-space: nowrap; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); border-style: dashed; font-size: .85rem; }
 .att.add input { display: none; }
 .atts.compact .att { width: 72px; height: 72px; }
+.atts.compact .att.add { width: auto; min-width: 72px; }
 </style>

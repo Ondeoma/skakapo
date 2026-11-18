@@ -176,7 +176,8 @@ final class AdminRoutes(config: ConfigStore, users: UserStore, nodes: NodeStore,
              "サービスアカウントの鍵は、ダウンロードした JSON の中身をそのまま貼り付けてください")
       _ <- Either.cond(cfg.get(CloudProvider.AllowedHosts).forall(_.split(",").forall(h => h.matches("^[a-zA-Z0-9*.-]{1,200}$") && h.count(_ == '*') <= 3)), (),
              "送ってよいホストは、ホスト名（* は1つにつき3個まで）をカンマで区切って入れてください")
-      _ <- Either.cond(List(CloudProvider.AccessAdmins, CloudProvider.AccessAll).contains(r.access), (), "使える人が正しくありません")
+      _ <- Either.cond(CloudProvider.accessAll.contains(r.access), (), "使える人が正しくありません")
+      _ <- Either.cond(r.access != CloudProvider.AccessGroups || r.groups.nonEmpty, (), "使える利用者の種類を選んでください")
       _ <- Check.text(r.notes, "説明", 5000)
     yield r.copy(name = n, config = cfg, secrets = sec)
 
@@ -186,7 +187,7 @@ final class AdminRoutes(config: ConfigStore, users: UserStore, nodes: NodeStore,
    */
   private def saveCloud(id: Option[UUID], r: CloudCredentialReq): IO[Response[IO]] =
     valid(checkCloud(r, id.isEmpty)) { x =>
-      val probe = CloudCredentialDto(id.getOrElse(ProbeId), x.name, x.provider, x.config, true, x.notes, x.enabled, access = x.access)
+      val probe = CloudCredentialDto(id.getOrElse(ProbeId), x.name, x.provider, x.config, true, x.notes, x.enabled, access = x.access, groups = x.groups)
       probeAndSave(id, x.secrets.map(_.asJson.noSpaces), id.flatTraverse(i => config.cloudSecret(i).map(_.flatMap(e => box.flatMap(_.decrypt(e))))),
         clouds.probe(probe, _),
         // AWS は確かめで分かったアカウント ID を覚える（S3 を自分のアカウントのバケットに限るため. 分からなければ保存しない）
@@ -249,7 +250,7 @@ final class AdminRoutes(config: ConfigStore, users: UserStore, nodes: NodeStore,
     case req @ GET -> Root / "api" / "admin" / "prompt" =>
       // 管理者の依頼で見える前提（クラウドの資格情報は、管理者が使えるもの）
       admin(req)(_ => (runner.knowledge, config.cloudCredentials(enabledOnly = true)).flatMapN((k, cs) =>
-        Ok(Json.obj("text" -> Prompt.stable(k.copy(clouds = cs.filter(_.usableBy(true)))).asJson))))
+        Ok(Json.obj("text" -> Prompt.stable(k.copy(clouds = cs.filter(_.usableBy(true, None)))).asJson))))
 
     case req @ GET -> Root / "api" / "admin" / "stats" => admin(req)(_ => nodes.stats.flatMap(Ok(_)))
 

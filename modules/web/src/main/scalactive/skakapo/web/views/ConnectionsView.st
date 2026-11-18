@@ -69,7 +69,7 @@ def tokenOpen(s: State, c: ConnectionDto) = s.tokenFor.mapC(_.contains(c.service
             <button class="ghost small danger" @click="disconnect(s, c)">連携をやめる</button>
           </template>
           <template v-else>
-            <button v-if="c.canOAuth" class="primary small" @click="oauth(c)">{{ c.service.name }} で許可して連携</button>
+            <button v-if="c.canOAuth" class="primary small" @click="oauth(c)">連携</button>
             <button v-if="canToken(c)" class="ghost small" @click="s.tokenFor := Some(c.service.id)">API トークンで連携</button>
             <span v-if="!c.canOAuth && !canToken(c)" class="small muted">管理者が OAuth を設定すると連携できます</span>
           </template>
