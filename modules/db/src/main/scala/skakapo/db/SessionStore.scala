@@ -36,7 +36,7 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
       r._10, r._11)
 
   /**
-   * 会話を作り、最初の発言（出来事と transcript）と実行を入れる. 添付した画像（本人が上げて、まだ会話に結び付いていないもの）を結び付ける.
+   * 会話を作り、最初の発言（出来事と transcript）と実行を入れる. 添付したファイル（本人が上げて、まだ会話に結び付いていないもの）を結び付ける.
    * titleAuto なら題名は仮のもの（エージェントが set_title で決める）.
    */
   def create(userId: UUID, title: String, titleAuto: Boolean, requestType: String, form: Map[String, String], firstMessage: String, transcript: Json,
@@ -45,7 +45,7 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
     for
       s   <- (fr"""insert into agent_session (id, user_id, title, title_auto, request_type, form, status, transcript)
                  values ($id, $userId, $title, $titleAuto, $requestType, ${form.asJson}, 'queued', $transcript) returning""" ++ cols).query[Row].unique.map(session)
-      _   <- attachments.traverse_(a => sql"update attachment set session_id = $id where id = ${a.id} and user_id = $userId and session_id is null".update.run)
+      _   <- linkC(id, userId, attachments)
       _   <- eventC(id, "user", Json.obj("text" -> firstMessage.asJson, "form" -> true.asJson, "attachments" -> attachments.asJson))
       run <- enqueueC(id)
     yield (s, run)
@@ -57,7 +57,10 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
      else sql"update agent_session set title = $title, title_auto = false where id = $id").update.run.map(_ > 0)
   )
 
-  // ---------------------------------------------------------------- 添付した画像
+  // ---------------------------------------------------------------- 添付したファイル
+
+  private def linkC(sessionId: UUID, userId: UUID, attachments: List[AttachmentDto]): ConnectionIO[Unit] =
+    attachments.traverse_(a => sql"update attachment set session_id = $sessionId where id = ${a.id} and user_id = $userId and session_id is null".update.run)
 
   def saveAttachment(userId: UUID, name: String, contentType: String, data: Array[Byte]): IO[AttachmentDto] = tx {
     val id = UUID.randomUUID()
@@ -65,7 +68,7 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
       .as(AttachmentDto(id, name, contentType, data.length.toLong))
   }
 
-  /** 本人が上げた、まだ会話に結び付いていない画像（会話を始めるときに使う）. */
+  /** 本人が上げた、まだ会話に結び付いていないファイル（会話を始める・返事を送るときに使う）. */
   def pendingAttachments(userId: UUID, ids: List[UUID]): IO[List[(AttachmentDto, Array[Byte])]] = tx(
     if ids.isEmpty then List.empty.pure[ConnectionIO]
     else sql"""select id, name, content_type, size, data from attachment where user_id = $userId and session_id is null and id = any(${ids.toArray})"""
@@ -73,13 +76,18 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
         .sortBy(x => ids.indexOf(x._1.id)))
   )
 
-  /** 画像（本人のもの. 会話に結び付いていれば、その会話の持ち主）. */
-  def attachment(id: UUID, userId: UUID): IO[Option[(String, Array[Byte])]] = tx(
-    sql"""select a.content_type, a.data from attachment a left join agent_session s on s.id = a.session_id
-          where a.id = $id and (a.user_id = $userId or s.user_id = $userId)""".query[(String, Array[Byte])].option
+  /** 添付したファイルの名前・種類・中身（本人のもの. 会話に結び付いていれば、その会話の持ち主）. */
+  def attachment(id: UUID, userId: UUID): IO[Option[(String, String, Array[Byte])]] = tx(
+    sql"""select a.name, a.content_type, a.data from attachment a left join agent_session s on s.id = a.session_id
+          where a.id = $id and (a.user_id = $userId or s.user_id = $userId)""".query[(String, String, Array[Byte])].option
   )
 
-  /** 会話に結び付かないまま1日たった画像を消す. */
+  /** 会話に添付したファイルの合計の大きさ（バイト）. */
+  def attachedBytes(sessionId: UUID): IO[Long] = tx(
+    sql"select coalesce(sum(size), 0)::bigint from attachment where session_id = $sessionId".query[Long].unique
+  )
+
+  /** 会話に結び付かないまま1日たったファイルを消す. */
   def purgeAttachments: IO[Unit] = tx(sql"delete from attachment where session_id is null and created_at < now() - interval '1 day'".update.run.void)
 
   def find(id: UUID): IO[Option[AgentSession]] = tx((fr"select" ++ cols ++ fr"from agent_session where id = $id").query[Row].option.map(_.map(session)))
@@ -127,7 +135,7 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
    * 利用者の発言（message は MessageParam の JSON. transcript を読まずに末尾へ足すので、実行の最後の保存と競合しない）.
    * 同じ会話で動いている実行があれば Left（同時に動かさない）.
    */
-  def say(id: UUID, text: String, message: Json): IO[Either[String, UUID]] = tx(
+  def say(id: UUID, userId: UUID, text: String, message: Json, attachments: List[AttachmentDto] = Nil): IO[Either[String, UUID]] = tx(
     // 同じ会話への発言が重なっても、実行が2つ入らないよう会話の行を押さえてから確かめる
     sql"select 1 from agent_session where id = $id for update".query[Int].option *>
     sql"select 1 from run where session_id = $id and status in (${RunStatus.Queued}, ${RunStatus.Running})".query[Int].option.flatMap {
@@ -135,7 +143,9 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa):
       case None =>
         sql"""update agent_session set transcript = transcript || jsonb_build_array($message), status = 'queued', updated_at = now()
               where id = $id""".update.run *>
-          eventC(id, "user", Json.obj("text" -> text.asJson)) *> enqueueC(id).map(Right(_))
+          linkC(id, userId, attachments) *>
+          eventC(id, "user", Json.obj("text" -> text.asJson).deepMerge(
+            if attachments.isEmpty then Json.obj() else Json.obj("attachments" -> attachments.asJson))) *> enqueueC(id).map(Right(_))
     }
   )
 

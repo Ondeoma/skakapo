@@ -196,7 +196,7 @@ object ApiRoutes:
       push: Option[(skakapo.push.PushStore, skakapo.push.PushService)] = None): HttpRoutes[IO] =
     val rest = new AuthRoutes(oidc, users, sess, cfg).routes <+> appRoutes <+>
       push.fold(HttpRoutes.empty[IO])((store, service) => new PushRoutes(store, service, sess).routes)
-    // 本文は MaxBody まで（大きな本文でメモリを使い切らせない. 添付する画像の 5MB より大きくしておく）.
+    // 本文は MaxBody まで（大きな本文でメモリを使い切らせない. 添付するファイルの上限より大きくしておく）.
     // Content-Length が超えていれば、EntityLimiter はルートに入る前に例外にするので、ここで 413 にする
     val limited = EntityLimiter.httpRoutes(rest <+> new McpRoutes(rest, sess, cfg.version).routes, MaxBody)
     val all = HttpRoutes[IO](req => limited(req).recoverWith { case _: EntityLimiter.EntityTooLarge => OptionT.liftF(tooLarge) })

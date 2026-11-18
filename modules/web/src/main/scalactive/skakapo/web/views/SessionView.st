@@ -1,5 +1,6 @@
 <script lang="scala">
 import skakapo.web.*
+import skakapo.web.parts.*
 import skakapo.shared.*
 import org.scalajs.dom
 
@@ -11,7 +12,7 @@ case class Props(sessionId: UUID)
 
 case class State(session: RV[Option[SessionDto]] = RV(None), events: RV[List[EventDto]] = RV(Nil), run: RV[Option[RunDto]] = RV(None),
                  usage: RV[Option[UsageDto]] = RV(None),
-                 text: RV[String] = RV(""), sending: RV[Boolean] = RV(false), alive: RV[Boolean] = RV(true), last: RV[Long] = RV(0L),
+                 text: RV[String] = RV(""), attach: Attach = Attach(), sending: RV[Boolean] = RV(false), alive: RV[Boolean] = RV(true), last: RV[Long] = RV(0L),
                  editing: RV[Boolean] = RV(false), titleInput: RV[String] = RV(""))
 
 def initState() = State()
@@ -73,11 +74,11 @@ def runInfo(s: State) = s.run.mapC(_.map(r =>
 
 def send(s: State, props: Props): Unit = {
   val t = s.text.v.trim
-  if (t.nonEmpty && !s.sending.v) {
+  if ((t.nonEmpty || s.attach.atts.v.nonEmpty) && !s.sending.v && !s.attach.busy) {
     s.sending := true
-    Api.say(props.sessionId, t).onComplete { r =>
+    Api.say(props.sessionId, t, s.attach.ids).onComplete { r =>
       s.sending := false
-      r.fold(Store.error, _ => { s.text := ""; s.session := s.session.v.map(_.copy(status = SessionStatus.Queued)) })
+      r.fold(Store.error, _ => { s.text := ""; s.attach.clear(); s.session := s.session.v.map(_.copy(status = SessionStatus.Queued)) })
     }
   }
 }
@@ -146,7 +147,12 @@ def attachments(e: EventDto): List[AttachmentDto] = e.data.hcursor.get[List[Atta
       <div class="events">
         <template v-for="e in s.events" :key="e.id">
           <div v-if='e.kind == "user"' class="msg user"><div class="bubble">
-            <div v-if="attachments(e).nonEmpty" class="thumbs"><a v-for="a in attachments(e)" :href="AttachmentUrl(a)" target="_blank" rel="noopener"><img :src="AttachmentUrl(a)" :alt="a.name"></a></div>
+            <div v-if="attachments(e).nonEmpty" class="thumbs">
+              <template v-for="a in attachments(e)">
+                <a v-if="a.isImage" :href="AttachmentUrl(a)" target="_blank" rel="noopener"><img :src="AttachmentUrl(a)" :alt="a.name"></a>
+                <a v-else class="file" :href="AttachmentUrl(a)" :download="a.name" :title="a.name">📄 <span class="nm">{{ a.name }}</span> <span class="small muted">{{ AttachmentRule.size(a.size) }}</span></a>
+              </template>
+            </div>
             <div class="pre">{{ text(e) }}</div>
           </div></div>
           <div v-else-if='e.kind == "assistant"' class="msg bot"><div class="bubble md" v-html="html(e)"></div></div>
@@ -163,12 +169,13 @@ def attachments(e: EventDto): List[AttachmentDto] = e.data.hcursor.get[List[Atta
         </template>
         <div v-if="busy(s)" class="note working"><span class="dot"></span> エージェントが作業しています…</div>
       </div>
-      <form class="composer panel" @submit.prevent="send(s, props)">
+      <form class="composer panel" @submit.prevent="send(s, props)" @paste="s.attach.paste(event)" @dragover.prevent="()" @drop="s.attach.drop(event)">
         <textarea v-model="s.text" rows="3" placeholder="返事・追加の指示（Enter で送る・Shift+Enter で改行）" @keydown="key(s, props, event)" :disabled="busy(s).v"></textarea>
+        <AttachList v-if="!busy(s).v" :attach="s.attach" :compact="true" />
         <div class="row">
           <button v-if="busy(s)" type="button" class="danger" @click="stop(s, props)">止める</button>
           <span class="grow"></span>
-          <button type="submit" class="primary" :disabled="busy(s).v || s.sending.v">送る</button>
+          <button type="submit" class="primary" :disabled="busy(s).v || s.sending.v || s.attach.uploading.v > 0">送る</button>
         </div>
       </form>
     </div>
@@ -212,6 +219,8 @@ def attachments(e: EventDto): List[AttachmentDto] = e.data.hcursor.get[List[Atta
 .title-edit { gap: .4rem; align-items: center; }
 .thumbs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
 .thumbs img { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; }
+.thumbs .file { display: inline-flex; align-items: center; gap: .3rem; max-width: 100%; padding: .3rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); text-decoration: none; }
+.thumbs .file .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .tool { font-size: .85rem; border-left: 3px solid var(--line); padding: .15rem .6rem; margin-left: .4rem; }
 .tool summary { cursor: pointer; color: var(--muted); }
 .tool.res.ng { border-left-color: var(--danger); }

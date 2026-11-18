@@ -217,9 +217,9 @@ class FlowSpec extends munit.CatsEffectSuite:
       _ = assertEquals(done.usage.map(u => (u.runs, u.turns, u.inputTokens, u.outputTokens)), Some((1, 4, 400L, 80L)))
       _ = assert(done.usage.exists(_.costUsd > 0), done.usage)
       _ = assertEquals((done.session.title, done.session.titleAuto), ("期限の並び順の不具合", false)) // 決まったら、もう自動では変えない
-      // 最初の発言に画像が入っている（Claude に渡る）. 画像は本人だけが見られる
+      // 最初の発言に、添付の一覧と画像が入っている（Claude に渡る）. 画像は本人だけが見られる
       tr0 <- new SessionStore(fixture().xa).transcript(s.id)
-      _ = assertEquals(tr0.hcursor.downN(0).downField("content").downN(0).get[String]("type"), Right("image"))
+      _ = assertEquals(tr0.hcursor.downN(0).downField("content").downN(1).get[String]("type"), Right("image"))
       _ <- call(user, Method.GET, s"/api/attachments/${att.id}").map(r => assertEquals(r.status, Status.Ok))
       _ <- call(other, Method.GET, s"/api/attachments/${att.id}").map(r => assertEquals(r.status, Status.NotFound))
       // 利用者が題名を変えたら、もう自動にしない
@@ -465,6 +465,57 @@ class FlowSpec extends munit.CatsEffectSuite:
       rs <- json(admin, Method.GET, "/api/admin/repositories").map(_.as[List[RepositoryDto]].toOption.get)
       _ = assertEquals(rs.find(_.id == r.id).flatMap(_.accountId), None)
       _ <- call(admin, Method.DELETE, s"/api/admin/repositories/${r.id}")
+    yield ()
+  }
+
+  private def upload(ck: String, name: String, ct: MediaType, data: Array[Byte]): IO[Response[IO]] =
+    fixture().app.run(Request[IO](Method.POST, Uri.unsafeFromString(s"/api/attachments?name=${java.net.URLEncoder.encode(name, "UTF-8")}"))
+      .withEntity(data)(using EntityEncoder.byteArrayEncoder)
+      .putHeaders(Cookie(RequestCookie("skakapo_session", ck)), "X-Skakapo" -> "1", headers.`Content-Type`(ct)))
+
+  private def idle(ck: String, id: UUID): IO[EventsDto] =
+    (json(ck, Method.GET, s"/api/sessions/$id/events?after=0&wait=2").map(_.as[EventsDto].toOption.get)
+      .flatMap(d => if d.session.status == SessionStatus.Idle && d.run.forall(_.status == "done") then IO.pure(Some(d)) else IO.sleep(300.millis).as(None)))
+      .untilDefinedM.timeout(60.seconds)
+
+  test("添付: 種類を問わず上げられ、画像・PDF・文字のファイルは Claude が読める形で、それ以外は名前だけを渡す. 返事にも添付できる") {
+    val utf8 = java.nio.charset.StandardCharsets.UTF_8
+    for
+      user <- login("添付する人", admin = false)
+      csv  <- upload(user, "売上.csv", MediaType.text.csv, "月,額\n1月,100\n".getBytes(utf8)).flatMap(_.as[AttachmentDto])
+      pdf  <- upload(user, "仕様.pdf", MediaType.application.pdf, "%PDF-1.4\n%%EOF".getBytes(utf8)).flatMap(_.as[AttachmentDto])
+      bin  <- upload(user, "dump.bin", MediaType.application.`octet-stream`, Array[Byte](0, 1, 2, -1, -2)).flatMap(_.as[AttachmentDto])
+      _ = assertEquals(List(csv.contentType, pdf.contentType, bin.contentType), List("text/csv", "application/pdf", "application/octet-stream"))
+      // 大きすぎるものは断る
+      _ <- upload(user, "big.bin", MediaType.application.`octet-stream`, new Array[Byte](AttachmentRule.MaxBytes + 1))
+             .map(r => assertEquals(r.status, Status.PayloadTooLarge))
+      s <- json(user, Method.POST, "/api/sessions", Some(StartReq("other", Map("description" -> "資料を見てください"), List(csv.id, pdf.id, bin.id)).asJson),
+             Status.Created).map(_.as[SessionDto].toOption.get)
+      tr <- new SessionStore(fixture().xa).transcript(s.id)
+      content = tr.hcursor.downN(0).downField("content")
+      types = (0 to 4).toList.map(i => content.downN(i).get[String]("type").getOrElse(""))
+      // 一覧（文）・CSV（文書）・PDF（文書）・フォームの文. バイナリは一覧に名前だけ
+      _ = assertEquals(types, List("text", "document", "document", "text", ""))
+      _ = assert(content.downN(0).get[String]("text").exists(t => t.contains("dump.bin") && t.contains("中身を読めません")), content.focus)
+      _ = assertEquals(content.downN(1).downField("source").get[String]("data"), Right("月,額\n1月,100\n"))
+      _ = assertEquals(content.downN(2).downField("source").get[String]("media_type"), Right("application/pdf"))
+      // 画像でないものは、ダウンロードさせる
+      _ <- call(user, Method.GET, s"/api/attachments/${csv.id}").map { r =>
+             assertEquals(r.contentType.map(_.mediaType), Some(MediaType.application.`octet-stream`))
+             assert(r.headers.get(org.typelevel.ci.CIString("Content-Disposition")).exists(_.head.value.startsWith("attachment;")), r.headers)
+           }
+      _ <- idle(user, s.id)
+      // 返事にも添付できる（文がなくてもよい）. 出来事に添付が残る
+      log <- upload(user, "error.log", MediaType.text.plain, "ERROR x".getBytes(utf8)).flatMap(_.as[AttachmentDto])
+      _ <- json(user, Method.POST, s"/api/sessions/${s.id}/messages", Some(MessageReq("", List(log.id)).asJson), Status.Accepted)
+      tr2 <- new SessionStore(fixture().xa).transcript(s.id)
+      last = tr2.asArray.get.last.hcursor.downField("content")
+      _ = assertEquals((0 to 2).toList.map(i => last.downN(i).get[String]("type").getOrElse("")), List("text", "document", "text"))
+      ev <- json(user, Method.GET, s"/api/sessions/${s.id}/events?after=0").map(_.as[EventsDto].toOption.get)
+      _ = assert(ev.events.exists(e => e.kind == "user" && e.data.hcursor.get[List[AttachmentDto]]("attachments").exists(_.map(_.id) == List(log.id))))
+      // 一度使った添付は、もう使えない
+      _ <- idle(user, s.id)
+      _ <- json(user, Method.POST, s"/api/sessions/${s.id}/messages", Some(MessageReq("もう一度", List(log.id)).asJson), Status.BadRequest)
     yield ()
   }
 

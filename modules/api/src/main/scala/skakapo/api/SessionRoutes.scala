@@ -2,7 +2,7 @@ package skakapo.api
 
 import cats.effect.*
 import cats.syntax.all.*
-import com.anthropic.models.messages.{Base64ImageSource, ContentBlockParam, ImageBlockParam, MessageParam, TextBlockParam}
+import com.anthropic.models.messages.{ContentBlockParam, MessageParam, TextBlockParam}
 import io.circe.Json
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
@@ -59,6 +59,22 @@ final class SessionRoutes(store: SessionStore, config: ConfigStore, val sessions
           .map(usage => EventsDto(x.dto(rt.map(_.label).getOrElse(x.requestType)), es, run.map(_.dto), usage))
       }
 
+  /** 添付の ID を確かめて中身を読む（本人が上げて、まだ会話に結び付いていないもの. used はその会話にすでに添付した合計）. */
+  private def withAttachments(u: User, ids: List[UUID], used: Long)(f: List[(AttachmentDto, Array[Byte])] => IO[Response[IO]]): IO[Response[IO]] =
+    val distinct = ids.distinct
+    if distinct.size > AttachmentRule.MaxCount then err(Status.BadRequest, s"添付は1回に ${AttachmentRule.MaxCount} 個までです")
+    else store.pendingAttachments(u.id, distinct).flatMap { atts =>
+      if atts.size != distinct.size then err(Status.BadRequest, "添付したファイルが見つかりません。もう一度添付してください")
+      else if used + atts.map(_._1.size).sum > AttachmentRule.MaxTotalBytes then
+        err(Status.BadRequest, s"1つの依頼に添付できるのは合計 ${AttachmentRule.mb(AttachmentRule.MaxTotalBytes)} までです")
+      else f(atts)
+    }
+
+  /** 利用者の発言（添付は文より前に置く. Claude は添付のあとの指示をよく読む）. */
+  private def userMessage(atts: List[(AttachmentDto, Array[Byte])], text: String): MessageParam =
+    if atts.isEmpty then MessageParam.ofUser(text)
+    else MessageParam.ofUserOfContentBlockParams((AttachmentBlocks(atts) :+ ContentBlockParam.ofText(TextBlockParam.builder().text(text).build())).asJava)
+
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "request-types" => authed(req)(_ => config.requestTypes(enabledOnly = true).flatMap(Ok(_)))
 
@@ -78,18 +94,11 @@ final class SessionRoutes(store: SessionStore, config: ConfigStore, val sessions
           case Some(t) =>
             valid(FormCheck.values(t.fields, r.values)) { values =>
               checkRefs(t, values).flatMap(valid(_) { _ =>
-                if r.attachments.distinct.size > AttachmentRule.MaxCount then err(Status.BadRequest, s"画像は ${AttachmentRule.MaxCount} 枚までです")
-                else store.pendingAttachments(u.id, r.attachments.distinct).flatMap { atts =>
-                  if atts.size != r.attachments.distinct.size then err(Status.BadRequest, "添付した画像が見つかりません。もう一度添付してください")
-                  else
-                    val first = Prompt.formMessage(t, values)
-                    val (title, auto) = Prompt.title(t, values)
-                    // 画像は、フォームの文より前に置く（Claude は画像のあとの指示をよく読む）
-                    val blocks = atts.map((a, data) => ContentBlockParam.ofImage(ImageBlockParam.builder().source(Base64ImageSource.builder()
-                      .mediaType(Base64ImageSource.MediaType.of(a.contentType)).data(java.util.Base64.getEncoder.encodeToString(data)).build()).build())) :+
-                      ContentBlockParam.ofText(TextBlockParam.builder().text(first).build())
-                    store.create(u.id, title, auto, t.key, values, first, Jsons.encodeTranscript(List(MessageParam.ofUserOfContentBlockParams(blocks.asJava))),
-                      atts.map(_._1)).flatMap((s, _) => skakapo.observe.Metrics.count("skakapo.sessions.created", "request_type" -> t.key) *> Created(s.dto(t.label)))
+                withAttachments(u, r.attachments, 0L) { atts =>
+                  val first = Prompt.formMessage(t, values)
+                  val (title, auto) = Prompt.title(t, values)
+                  store.create(u.id, title, auto, t.key, values, first, Jsons.encodeTranscript(List(userMessage(atts, first))),
+                    atts.map(_._1)).flatMap((s, _) => skakapo.observe.Metrics.count("skakapo.sessions.created", "request_type" -> t.key) *> Created(s.dto(t.label)))
                 }
               })
             }
@@ -116,14 +125,16 @@ final class SessionRoutes(store: SessionStore, config: ConfigStore, val sessions
     case req @ POST -> Root / "api" / "sessions" / UuidVar(id) / "messages" =>
       authed(req)(u => withCredit(u)(owned(u, id)(s => body[MessageReq](req) { r =>
         val text = r.text.trim
-        if text.isEmpty then err(Status.BadRequest, "返事を入れてください")
+        if text.isEmpty && r.attachments.isEmpty then err(Status.BadRequest, "返事を入れるか、ファイルを添付してください")
         else if text.length > 20000 then err(Status.BadRequest, "返事は20000文字までにしてください")
-        else
-          val message = Jsons.encodeTranscript(List(MessageParam.ofUser(text))).asArray.flatMap(_.headOption).getOrElse(Json.Null)
-          store.say(s.id, text, message).flatMap {
+        else store.attachedBytes(s.id).flatMap(used => withAttachments(u, r.attachments, used) { atts =>
+          val message = Jsons.encodeTranscript(List(userMessage(atts, if text.isEmpty then "（添付したファイルを見てください）" else text)))
+            .asArray.flatMap(_.headOption).getOrElse(Json.Null)
+          store.say(s.id, u.id, text, message, atts.map(_._1)).flatMap {
             case Right(_) => Accepted(Json.obj())
             case Left(e)  => err(Status.Conflict, e)
           }
+        })
       })))
 
     // 今月のクレジット（自分の使った額・上限・残りと、全体の予算・残り）
@@ -143,24 +154,35 @@ final class SessionRoutes(store: SessionStore, config: ConfigStore, val sessions
           case _ => err(Status.BadRequest, "archived か title を指定してください")
       }))
 
-    // ------------------------------------------------------------ 画像の添付（会話を始める前に上げて、ID を StartReq に入れる）
+    // ------------------------------------------------------------ ファイルの添付（会話を始める・返事を送る前に上げて、ID を StartReq・MessageReq に入れる）
     case req @ POST -> Root / "api" / "attachments" =>
       authed(req) { u =>
-        val ct = req.contentType.map(c => s"${c.mediaType.mainType}/${c.mediaType.subType}").getOrElse("")
-        val name = param(req, "name").map(_.take(200)).getOrElse("image")
-        if !AttachmentRule.Types.contains(ct) then err(Status.UnsupportedMediaType, "PNG・JPEG・GIF・WebP の画像を選んでください")
-        else req.body.take(AttachmentRule.MaxBytes + 1L).compile.to(Array).flatMap { data =>
-          if data.length > AttachmentRule.MaxBytes then err(Status.PayloadTooLarge, "画像は5MBまでにしてください")
-          else if skakapo.shared.AvatarImage.detect(data).forall(_ != ct) then err(Status.UnsupportedMediaType, "画像の中身が種類と合いません")
-          else store.saveAttachment(u.id, name, ct, data).flatMap(Created(_))
+        // 種類が分からない・おかしいときは application/octet-stream として預かる
+        val ct = req.contentType.map(c => s"${c.mediaType.mainType}/${c.mediaType.subType}".toLowerCase)
+          .filter(_.matches("[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+")).getOrElse("application/octet-stream")
+        val name = param(req, "name").map(_.trim.take(200)).filter(_.nonEmpty).getOrElse("file")
+        req.body.take(AttachmentRule.MaxBytes + 1L).compile.to(Array).flatMap { data =>
+          AttachmentRule.check(ct, data.length.toLong) match
+            case Left(e) => err(Status.PayloadTooLarge, e)
+            case Right(_) =>
+              if AttachmentRule.ImageTypes.contains(ct) && skakapo.shared.AvatarImage.detect(data).forall(_ != ct) then
+                err(Status.UnsupportedMediaType, "画像の中身が種類と合いません")
+              else store.saveAttachment(u.id, name, ct, data).flatMap(Created(_))
         }
       }
 
+    // 画像はそのまま出す. それ以外はダウンロードさせる（ブラウザに HTML などとして開かせない）
     case req @ GET -> Root / "api" / "attachments" / UuidVar(id) =>
       authed(req)(u => store.attachment(id, u.id).flatMap {
-        case None => err(Status.NotFound, "画像が見つかりません")
-        case Some((ct, data)) =>
-          IO.pure(Response[IO](Status.Ok).withBodyStream(fs2.Stream.emits(data)).putHeaders(headers.`Content-Type`(MediaType.unsafeParse(ct)),
+        case None => err(Status.NotFound, "ファイルが見つかりません")
+        case Some((name, ct, data)) =>
+          val image = AttachmentRule.ImageTypes.contains(ct)
+          val disposition =
+            if image then "inline"
+            else s"attachment; filename*=UTF-8''${java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")}"
+          IO.pure(Response[IO](Status.Ok).withBodyStream(fs2.Stream.emits(data)).putHeaders(
+            headers.`Content-Type`(MediaType.parse(ct).toOption.filter(_ => image).getOrElse(MediaType.application.`octet-stream`)),
+            "Content-Disposition" -> disposition,
             "Cache-Control" -> "private, max-age=31536000, immutable", "X-Content-Type-Options" -> "nosniff", "Content-Security-Policy" -> "default-src 'none'"))
       })
 

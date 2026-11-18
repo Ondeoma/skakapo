@@ -138,20 +138,38 @@ final case class SessionDto(id: UUID, title: String, requestType: String, reques
     links: List[LinkDto], createdAt: String, updatedAt: String, archived: Boolean = false, titleAuto: Boolean = false)
     derives Encoder.AsObject, ConfiguredDecoder
 
-/** 会話を始める（フォームの入力・添付した画像の ID）. 題名（title の項目）を空にすると、エージェントが内容から決める. */
+/** 会話を始める（フォームの入力・添付したファイルの ID）. 題名（title の項目）を空にすると、エージェントが内容から決める. */
 final case class StartReq(requestType: String, values: Map[String, String], attachments: List[UUID] = Nil) derives Encoder.AsObject, ConfiguredDecoder
 
-/** 添付した画像. */
-final case class AttachmentDto(id: UUID, name: String, contentType: String, size: Long) derives Encoder.AsObject, Decoder
-
-/** 添付できる画像（Claude が読める形式と大きさ）. */
-object AttachmentRule {
-  val MaxBytes = 5 * 1024 * 1024
-  val MaxCount = 6
-  val Types: List[String] = List("image/png", "image/jpeg", "image/gif", "image/webp")
+/** 添付したファイル. */
+final case class AttachmentDto(id: UUID, name: String, contentType: String, size: Long) derives Encoder.AsObject, Decoder {
+  def isImage: Boolean = AttachmentRule.ImageTypes.contains(contentType)
 }
 
-final case class MessageReq(text: String) derives Encoder.AsObject, Decoder
+/**
+ * 添付できるファイル（種類は問わない）. Claude には、画像は画像、PDF は文書、文字のファイルは本文として渡し、それ以外は名前と種類だけを伝える.
+ * 会話の添付はやり取りのたびに Claude へ送り直すので、1つの会話の合計にも上限を設ける（Claude の要求の上限 32MB に収める）.
+ */
+object AttachmentRule {
+  val MaxBytes      = 10 * 1024 * 1024
+  val MaxTotalBytes = 20 * 1024 * 1024
+  val MaxCount      = 10
+  /** Claude が画像として読める形式と大きさ. */
+  val ImageTypes: List[String] = List("image/png", "image/jpeg", "image/gif", "image/webp")
+  val ImageMaxBytes = 5 * 1024 * 1024
+  def mb(n: Long): String = s"${n / (1024 * 1024)}MB"
+  /** ファイルの大きさを読みやすく. */
+  def size(n: Long): String =
+    if (n < 1024) s"$n B" else if (n < 1024 * 1024) s"${(n + 512) / 1024} KB" else f"${n.toDouble / (1024 * 1024)}%.1f MB"
+  /** 上げる前の確かめ（画面とサーバーで共通）. */
+  def check(contentType: String, bytes: Long): Either[String, Unit] =
+    if (bytes > MaxBytes) Left(s"ファイルは${mb(MaxBytes)}までにしてください")
+    else if (ImageTypes.contains(contentType) && bytes > ImageMaxBytes) Left(s"画像は${mb(ImageMaxBytes)}までにしてください")
+    else Right(())
+}
+
+/** 返事（添付したファイルの ID も付けられる. 文か添付のどちらかは要る）. */
+final case class MessageReq(text: String, attachments: List[UUID] = Nil) derives Encoder.AsObject, ConfiguredDecoder
 
 /** 画面に出す出来事. kind: user / assistant / tool_call / tool_result / status / error / note. data は kind ごとの JSON. */
 final case class EventDto(id: Long, kind: String, data: Json, at: String) derives Encoder.AsObject, Decoder

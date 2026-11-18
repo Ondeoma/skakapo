@@ -86,7 +86,8 @@ object Api {
   def session(id: UUID): Future[EventsDto] = get[EventsDto](s"/api/sessions/$id")
   /** 新しい出来事（wait 秒まで待つ）. */
   def events(id: UUID, after: Long, waitSec: Int): Future[EventsDto] = get[EventsDto](s"/api/sessions/$id/events?after=$after&wait=$waitSec")
-  def say(id: UUID, text: String): Future[Unit] = post[Json](s"/api/sessions/$id/messages", MessageReq(text).asJson).map(_ => ())
+  def say(id: UUID, text: String, attachments: List[UUID] = Nil): Future[Unit] =
+    post[Json](s"/api/sessions/$id/messages", MessageReq(text, attachments).asJson).map(_ => ())
   def cancel(id: UUID): Future[Unit] = post[Json](s"/api/sessions/$id/cancel").map(_ => ())
   def archive(id: UUID, archived: Boolean): Future[Unit] = patch[Json](s"/api/sessions/$id", Json.obj("archived" -> archived.asJson)).map(_ => ())
   def deleteSession(id: UUID): Future[Unit] = delete(s"/api/sessions/$id")
