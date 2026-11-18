@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="skakapo">
+  <!-- エージェントの画面（指示のカーソルと、AI のきらめき）を抱えた、虹色の頭のカカポ（kākāpō. ニュージーランドの飛べないオウム.
+       フクロウのような顔の円盤・ひげが目印）. 台紙・芽・丸い頭・目は兄弟（stui・skea・skotare・smohua・skaka）と同じ形 -->
+  <defs><clipPath id="head"><circle cx="80" cy="80" r="50"/></clipPath></defs>
+  <rect width="160" height="160" rx="36" fill="#FFF4D6"/>
+  <path d="M80 31q-12-13-4-27q14 7 4 27z" fill="#4D7C0F"/><path d="M80 31q13-10 21-4q-8 12-21 4z" fill="#84CC16"/>
+  <!-- 虹色の頭（上から 赤・橙・黄・緑・水色・青・紫） -->
+  <g clip-path="url(#head)">
+    <rect x="30" y="30" width="100" height="15" fill="#EF4444"/><rect x="30" y="45" width="100" height="14" fill="#F97316"/>
+    <rect x="30" y="59" width="100" height="14" fill="#EAB308"/><rect x="30" y="73" width="100" height="14" fill="#22C55E"/>
+    <rect x="30" y="87" width="100" height="14" fill="#06B6D4"/><rect x="30" y="101" width="100" height="14" fill="#3B82F6"/>
+    <rect x="30" y="115" width="100" height="15" fill="#A855F7"/>
+  </g>
+  <!-- 顔の円盤・目・ほお・ひげ・くちばし -->
+  <ellipse cx="80" cy="70" rx="30" ry="22" fill="#FFF7E0"/>
+  <circle cx="66" cy="62" r="5" fill="#1A2E05"/><circle cx="67.5" cy="60.5" r="1.6" fill="#fff"/><circle cx="94" cy="62" r="5" fill="#1A2E05"/><circle cx="95.5" cy="60.5" r="1.6" fill="#fff"/>
+  <ellipse cx="55" cy="75" rx="7" ry="4" fill="#F4A3A3"/><ellipse cx="105" cy="75" rx="7" ry="4" fill="#F4A3A3"/>
+  <path d="M60 80l-12 3M61 84l-11 6M100 80l12 3M99 84l11 6" stroke="#A3A08C" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M73 66q7-6 14 0q4 10-7 20q-11-10-7-20z" fill="#EDE7D3"/><path d="M76 68q4-3 8 0q1 6-4 10q-5-4-4-10z" fill="#C9C1A8"/>
+  <!-- エージェントの画面 -->
+  <rect x="32" y="94" width="96" height="56" rx="9" fill="#1F2D12" stroke="#D9CBB0" stroke-width="1.5"/>
+  <path d="M42 110l8 6-8 6" fill="none" stroke="#A3E635" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 122h16" stroke="#A3E635" stroke-width="4" stroke-linecap="round"/>
+  <path d="M42 136h46" stroke="#6B7F55" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M110 102q2 9 9 11q-7 2-9 11q-2-9-9-11q7-2 9-11z" fill="#FDE68A"/>
+  <path d="M98 128q1 4 4 5q-3 1-4 5q-1-4-4-5q3-1 4-5z" fill="#FDE68A"/>
+  <!-- 画面を抱える羽（緑と青） -->
+  <ellipse cx="42" cy="96" rx="9" ry="6" fill="#22C55E"/><ellipse cx="118" cy="96" rx="9" ry="6" fill="#3B82F6"/>
+</svg>

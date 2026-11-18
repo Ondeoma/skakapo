@@ -1,0 +1,19 @@
+# 開発用: PostgreSQL（ほかの開発環境とぶつからないよう、ポートを既定からずらしている）
+name: skakapo
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: skakapo
+      POSTGRES_PASSWORD: skakapo
+      POSTGRES_DB: skakapo
+    ports: ["127.0.0.1:54410:5432"]   # 手元からだけ（LAN に開かない）
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/docker/dev-initdb.sql:/docker-entrypoint-initdb.d/10-skakapo-test.sql:ro   # テスト用DB skakapo_test
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "skakapo"]
+      interval: 2s
+      retries: 30
+volumes:
+  pgdata:

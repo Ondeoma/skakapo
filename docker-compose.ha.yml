@@ -1,0 +1,47 @@
+# 冗長構成の例: 同じ PostgreSQL を使う skakapo を3台並べ、HAProxy で振り分ける（scripts/dist.sh の後に docker compose -f docker-compose.ha.yml up --build）
+# エージェントの実行は、空いているノードが DB で取り合う（WORKER_SLOTS で1台あたりの同時実行数）. 止まったノードの実行は、ほかのノードが続きから引き継ぐ.
+# node-c は WORKER_SLOTS=0 の、画面と API だけのノードの例（重い作業は node-a・node-b がする）
+# 本番では PostgreSQL も冗長にする（stui の deploy/ にある Patroni の例などを参照）
+name: skakapo-ha
+x-app: &app
+  build: { context: ., dockerfile: deploy/docker/app.Dockerfile }
+  environment: &env
+    DATABASE_URL: jdbc:postgresql://db:5432/skakapo
+    DATABASE_USER: skakapo
+    DATABASE_PASSWORD: skakapo
+    PUBLIC_URL: http://localhost:8180
+    # 例なので名前だけでログインできるようにしている（本番では OIDC_* を設定し、DEV_LOGIN は外す）.
+    # 開発用のログインは既定で 127.0.0.1 でだけ待ち受けるので、ロードバランサーから届くよう BIND_HOST を明示する
+    # （ホストへは 127.0.0.1 のポートだけを出している）
+    DEV_LOGIN: "true"
+    BIND_HOST: 0.0.0.0
+    DEV_LOGIN_ALLOW_REMOTE: "true"   # 開発用のログインで 127.0.0.1 以外を待ち受けることを明示する
+    # ロードバランサーの付ける X-Forwarded-For を信じる（ログインの回数制限を、ロードバランサーの IP でなく利用者ごとに数える）
+    TRUSTED_PROXIES: 172.16.0.0/12
+    APP_SECRET: change-me-to-a-long-random-value   # 本番では十分に長い乱数にする（DB のパスワードも同じ）
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # 手元の環境変数を渡す
+    WORK_DIR: /work
+  depends_on: { db: { condition: service_healthy } }
+  restart: unless-stopped
+services:
+  db:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: skakapo, POSTGRES_PASSWORD: skakapo, POSTGRES_DB: skakapo }
+    volumes: [hadata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "skakapo"], interval: 2s, retries: 30 }
+  node-a:
+    <<: *app
+    environment: { <<: *env, NODE_NAME: node-a, WORKER_SLOTS: "2" }
+  node-b:
+    <<: *app
+    environment: { <<: *env, NODE_NAME: node-b, WORKER_SLOTS: "2" }
+  node-c:
+    <<: *app
+    environment: { <<: *env, NODE_NAME: node-c, WORKER_SLOTS: "0" }
+  lb:
+    image: haproxy:3.0-alpine
+    volumes: [./deploy/docker/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro]
+    ports: ["127.0.0.1:8180:8080"]
+    depends_on: [node-a, node-b, node-c]
+volumes:
+  hadata:

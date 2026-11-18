@@ -1,0 +1,228 @@
+/* skakapo の全体のスタイル（近未来的なテーマ）。
+   色・質感は変数にまとめる。ライトとダークの値は light-dark() で1か所に書き、color-scheme で切り替える
+   （data-theme がなければ OS の設定に従う） */
+:root {
+  color-scheme: light dark;
+  /* 地と文字 */
+  --bg: light-dark(#f3f6fb, #05080f);
+  --fg: light-dark(#0b1324, #e4ecf7);
+  --muted: light-dark(#5a6a82, #8798b3);
+  --line: light-dark(rgba(20, 50, 100, .13), rgba(120, 175, 255, .14));
+  --hover: light-dark(rgba(8, 145, 178, .07), rgba(56, 189, 248, .08));
+  /* 差し色: シアンとバイオレット（ロゴの虹色になじむ）. --grad は主ボタン・強調の線に使う */
+  --accent: light-dark(#0786a6, #22d3ee);
+  --accent-2: light-dark(#7c3aed, #a78bfa);
+  --accent-weak: light-dark(rgba(7, 134, 166, .11), rgba(34, 211, 238, .13));
+  --on-accent: light-dark(#ffffff, #03121a);
+  --grad: linear-gradient(120deg, var(--accent), var(--accent-2));
+  --danger: light-dark(#e11d48, #fb7185);
+  --ok: light-dark(#059669, #34d399);
+  --warn: light-dark(#d97706, #fbbf24);
+  --info: light-dark(#2563eb, #60a5fa);
+  --down: var(--danger);
+  /* 面: 半透明のガラス（--card・--side）と、浮いた面（--surface. メニュー・ダイアログ） */
+  --card: light-dark(rgba(255, 255, 255, .74), rgba(13, 20, 36, .66));
+  --side: light-dark(rgba(236, 242, 250, .85), rgba(16, 25, 44, .8));
+  --surface: light-dark(#ffffff, #0c1322);
+  --field: light-dark(rgba(255, 255, 255, .8), rgba(4, 9, 18, .6));
+  --blur: blur(14px) saturate(140%);
+  --shadow: light-dark(0 10px 30px rgba(20, 50, 100, .12), 0 12px 40px rgba(0, 0, 0, .55));
+  --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 30%, transparent);
+  --hi: inset 0 1px 0 light-dark(rgba(255, 255, 255, .9), rgba(255, 255, 255, .05));
+  --scrim: light-dark(rgba(15, 30, 60, .35), rgba(1, 4, 12, .7));
+  --grid: light-dark(rgba(20, 50, 100, .05), rgba(120, 175, 255, .045));
+  --code-bg: #060b16;
+  --code-line: light-dark(#0b1324, #1f2c45);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --header: 60px;
+}
+/* light-dark() に対応していない古いブラウザでは、ライトの色を使う */
+@supports not (color: light-dark(#000, #fff)) {
+  :root {
+    --bg: #f3f6fb; --fg: #0b1324; --muted: #5a6a82; --line: rgba(20, 50, 100, .13); --hover: rgba(8, 145, 178, .07);
+    --accent: #0786a6; --accent-2: #7c3aed; --accent-weak: rgba(7, 134, 166, .11); --on-accent: #ffffff;
+    --danger: #e11d48; --ok: #059669; --warn: #d97706; --info: #2563eb;
+    --card: rgba(255, 255, 255, .74); --side: rgba(236, 242, 250, .85); --surface: #ffffff; --field: rgba(255, 255, 255, .8);
+    --shadow: 0 10px 30px rgba(20, 50, 100, .12); --hi: inset 0 1px 0 rgba(255, 255, 255, .9); --grid: rgba(20, 50, 100, .05); --code-line: #0b1324;
+    --scrim: rgba(15, 30, 60, .35);
+  }
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  /* 地: うっすらとした光（左上がシアン・右上がバイオレット）と、細いグリッド */
+  background-color: var(--bg); color: var(--fg); min-height: 100vh;
+  background-image:
+    radial-gradient(60rem 40rem at -10% -20%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+    radial-gradient(50rem 36rem at 110% -10%, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 60%),
+    linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px, 32px 32px;
+  background-attachment: fixed;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  font-size: 15px; line-height: 1.5; -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 1.5rem; margin: .2rem 0 1rem; letter-spacing: .02em; font-weight: 700; }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent; }
+h2 { font-size: 1.15rem; margin: 1.4rem 0 .6rem; }
+h3 { font-size: 1rem; margin: 1rem 0 .4rem; }
+code { font-family: var(--mono); font-size: .88em; }
+
+button, .btn {
+  font: inherit; font-size: .9rem; color: inherit; background: var(--field); border: 1px solid var(--line);
+  border-radius: 10px; padding: .38rem .85rem; cursor: pointer; line-height: 1.4; display: inline-flex; align-items: center; gap: .3rem;
+  white-space: nowrap; text-decoration: none; transition: background .15s, border-color .15s, box-shadow .15s, transform .1s;
+}
+button:hover, .btn:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); text-decoration: none; }
+button:active, .btn:active { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary, .btn.primary { background: var(--grad); border-color: transparent; color: var(--on-accent); font-weight: 600; }
+button.primary:hover, .btn.primary:hover { box-shadow: var(--glow); filter: brightness(1.05); }
+button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+button.ghost { border-color: transparent; background: transparent; }
+button.ghost:hover { background: var(--hover); }
+button.small, .btn.small { font-size: .8rem; padding: .15rem .5rem; }
+
+input, select, textarea {
+  font: inherit; font-size: .92rem; color: inherit; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: .4rem .65rem;
+  max-width: 100%; transition: border-color .15s, box-shadow .15s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak), 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent); }
+input[type="checkbox"], input[type="radio"] { width: auto; accent-color: var(--accent); }
+textarea { width: 100%; min-height: 5rem; resize: vertical; }
+textarea.code { font-family: var(--mono); font-size: .82rem; min-height: 12rem; }
+label { font-size: .88rem; }
+.field { display: flex; flex-direction: column; gap: .25rem; margin-bottom: .8rem; }
+.field > span { font-size: .78rem; color: var(--muted); letter-spacing: .02em; }
+.row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); }
+.small { font-size: .82rem; }
+.error { color: var(--danger); }
+.ok { color: var(--ok); }
+.right { margin-left: auto; }
+.nowrap { white-space: nowrap; }
+.hidden { display: none !important; }
+
+table.list { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.list th, table.list td { text-align: left; padding: .45rem .55rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+/* 表の見出しは計器のように: 等幅・大文字寄り・字間を広く */
+table.list th { font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600;
+  background: var(--side); position: sticky; top: 0; backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+
+.badge { display: inline-flex; align-items: center; gap: .25em; font-size: .74rem; padding: .05rem .5rem; border-radius: 999px; background: var(--hover); color: var(--fg); white-space: nowrap; border: 1px solid var(--line); }
+
+/* ガラスの面: 半透明・ぼかし・上端のハイライト */
+.card, .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1rem;
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--hi), var(--shadow); }
+.panel { margin-bottom: 1rem; }
+.empty { text-align: center; color: var(--muted); padding: 2rem 1rem; }
+
+.tabs { display: flex; gap: .2rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; overflow-x: auto; scrollbar-width: none; }
+.tabs a, .tabs button { padding: .5rem .8rem; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); white-space: nowrap; font-size: .9rem; }
+.tabs a:hover, .tabs button:hover { color: var(--fg); text-decoration: none; background: none; }
+.tabs .active { color: var(--fg); border-bottom: 2px solid transparent; border-image: var(--grad) 1; }
+
+
+.modal-bg { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 1000;
+  display: flex; align-items: flex-start; justify-content: center; padding: 6vh 1rem 1rem; overflow-y: auto; animation: scrim-in .15s ease-out; }
+/* 浮いた面: 不透明の面・差し色を帯びた縁・淡い光 */
+.modal { background: var(--surface); border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); border-radius: 18px; width: 100%; max-width: 640px;
+  padding: 1.2rem 1.4rem; box-shadow: var(--hi), var(--shadow), 0 0 60px color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: modal-in .18s cubic-bezier(.2, .8, .2, 1); }
+@keyframes scrim-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98) } to { opacity: 1; transform: none } }
+.modal h2 { margin-top: 0; }
+.modal .actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+
+.toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 2000; display: flex; flex-direction: column; gap: .5rem; max-width: min(380px, calc(100vw - 2rem)); }
+.toast { background: var(--surface); color: var(--fg); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 12px; padding: .6rem .9rem; box-shadow: var(--shadow); font-size: .88rem; display: flex; gap: .6rem; align-items: flex-start; animation: toast-in .2s ease-out; }
+.toast.error { background: var(--danger); color: #fff; }
+.toast button { color: inherit; border-color: transparent; background: transparent; padding: 0 .3rem; }
+@keyframes toast-in { from { transform: translateY(10px); opacity: 0 } to { transform: none; opacity: 1 } }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 1.2rem 1.2rem 4rem; }
+.page.narrow { max-width: 860px; }
+.page.wide { max-width: none; }
+
+@media (max-width: 720px) {
+  body { font-size: 14px; }
+  .page { padding: .8rem .8rem 4rem; }
+  .hide-sp { display: none !important; }
+  .modal { padding: 1rem; }
+  .modal-bg { padding: 2vh .5rem .5rem; }
+}
+@media (min-width: 721px) {
+  .only-sp { display: none !important; }
+}
+
+
+/* 管理のタブの頭（説明と追加のボタンの並び） */
+.panel > .head { align-items: center; gap: .8rem; }
+
+/* 右上のユーザーのメニュー（項目は RouterLink もあるので、scoped ではなくここに書く） */
+header .menu a { display: block; white-space: nowrap; padding: .5rem .7rem; border-radius: 6px; color: var(--fg); text-decoration: none; }
+header .menu a:hover { background: var(--hover); text-decoration: none; }
+
+/* ---------------------------------------------------------------- 監視 */
+/* 状態のバッジ: 色は --c で決め、地と縁はその色を薄めて作る */
+.st { --c: var(--muted); display: inline-block; font-family: var(--mono); font-size: .7rem; letter-spacing: .04em; font-weight: 600; padding: .08rem .6rem;
+  border-radius: 999px; white-space: nowrap; color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 30%, transparent); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.list tr.click { cursor: pointer; }
+table.list tr.click:hover td { background: var(--hover); }
+
+/* カード全体を押すと開くリンク（RouterLink の a には部品の CSS が届かないので全体に書く. 親は position: relative） */
+.card-cover { position: absolute; inset: 0; border-radius: inherit; }
+
+/* ヘッダーのナビゲーション（RouterLink の a には部品の CSS が届かないので全体に書く） */
+header .navs { display: flex; gap: .2rem; }
+.nav { padding: .4rem .8rem; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: .35rem; }
+.nav:hover { background: var(--hover); color: var(--fg); text-decoration: none; }
+.nav.active { background: var(--accent-weak); color: var(--fg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.nav .badge { background: var(--down); color: #fff; border-radius: 999px; font-size: .72rem; padding: 0 .45rem; line-height: 1.4; }
+.sp-nav .nav { padding: .6rem .8rem; }
+
+/* エージェントの返事（Markdown を HTML にしたもの. skakapo.shared.Markdown） */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: .35rem 0; }
+.md h3, .md h4, .md h5, .md h6 { margin: .9rem 0 .35rem; line-height: 1.35; }
+.md h3 { font-size: 1.08rem; }
+.md h4 { font-size: 1rem; }
+.md h5, .md h6 { font-size: .92rem; color: var(--muted); }
+.md ul, .md ol { margin: .35rem 0; padding-left: 1.4rem; }
+.md li { margin: .12rem 0; }
+.md li > ul, .md li > ol { margin: .1rem 0; }
+.md li.task { list-style: none; margin-left: -1.2rem; }
+.md li.task input { margin: 0 .35rem 0 0; vertical-align: -.1em; }
+.md strong { font-weight: 700; }
+.md del { color: var(--muted); }
+.md :not(pre) > code { background: var(--hover); border: 1px solid var(--line); border-radius: 5px; padding: .05em .35em; font-size: .86em; }
+.md pre { position: relative; background: var(--code-bg); color: #dbe6f5; padding: .75rem .9rem; border-radius: 10px; overflow: auto; border: 1px solid var(--code-line);
+  margin: .5rem 0; line-height: 1.5; }
+.md pre code { font-size: .84rem; }
+.md pre .lang { position: absolute; top: .3rem; right: .55rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; color: #7f93b3; text-transform: uppercase; }
+.md blockquote { margin: .5rem 0; padding: .35rem .9rem; border-left: 3px solid transparent; border-image: var(--grad) 1;
+  background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--fg); border-radius: 0 8px 8px 0; }
+.md hr { border: none; height: 1px; background: var(--grad); opacity: .5; margin: .9rem 0; }
+.md .table-scroll { overflow-x: auto; margin: .5rem 0; border: 1px solid var(--line); border-radius: 10px; }
+.md table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+.md th, .md td { padding: .42rem .65rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.md th { background: var(--side); font-weight: 600; white-space: nowrap; }
+.md tr:last-child td { border-bottom: none; }
+.md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--hover) 60%, transparent); }
+
+/* 会話の状態 */
+.st-idle { --c: var(--accent); }
+.st-queued { --c: var(--warn); }
+.st-running { --c: var(--info); }
+.st-done { --c: var(--ok); }
+.st-failed { --c: var(--danger); }
