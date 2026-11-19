@@ -2,7 +2,6 @@
 import skakapo.web.*
 import skakapo.web.parts.*
 import skakapo.shared.*
-import org.scalajs.dom
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 

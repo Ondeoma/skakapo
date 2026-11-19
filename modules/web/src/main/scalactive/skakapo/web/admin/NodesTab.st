@@ -1,6 +1,5 @@
 <script lang="scala">
 import skakapo.web.*
-import skakapo.web.parts.*
 import skakapo.shared.*
 
 // ノード（冗長構成）: どのノードが動いていて、いくつ実行を抱えているか. 実行は空いているノードが先に取る

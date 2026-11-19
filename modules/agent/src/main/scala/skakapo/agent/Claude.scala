@@ -3,56 +3,52 @@ package skakapo.agent
 import cats.effect.*
 import com.anthropic.client.AnthropicClient
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
-import com.anthropic.core.{JsonValue, ObjectMappers}
+import com.anthropic.core.JsonValue
 import com.anthropic.helpers.MessageAccumulator
 import com.anthropic.models.messages.*
-import com.fasterxml.jackson.core.`type`.TypeReference
-import io.circe.Json
-import io.circe.parser.parse
 
 import scala.jdk.CollectionConverters.*
 
-/** circe の JSON と、Anthropic の SDK（Jackson）の値の変換. */
-object Jsons:
-  private val mapper = ObjectMappers.jsonMapper()
-
-  def toJsonValue(j: Json): JsonValue = JsonValue.fromJsonNode(mapper.readTree(j.noSpaces))
-
-  def fromJsonValue(v: JsonValue): Json = parse(mapper.writeValueAsString(v)).getOrElse(Json.Null)
-
-  /** 会話（MessageParam の配列）を JSON にする（DB に保存して、別のノードが続きから読めるように）. */
-  def encodeTranscript(ms: List[MessageParam]): Json = parse(mapper.writeValueAsString(ms.asJava)).getOrElse(Json.arr())
-
-  def decodeTranscript(j: Json): List[MessageParam] =
-    mapper.readValue(j.noSpaces, new TypeReference[java.util.List[MessageParam]]() {}).asScala.toList
-
-  /** JSON Schema（MCP の inputSchema）を、Claude のツールの入力スキーマにする. */
-  def inputSchema(schema: Json): Tool.InputSchema =
-    val c = schema.hcursor
-    val props = Tool.InputSchema.Properties.builder()
-    c.downField("properties").focus.flatMap(_.asObject).foreach(_.toList.foreach((k, v) => props.putAdditionalProperty(k, toJsonValue(v))))
-    val b = Tool.InputSchema.builder().properties(props.build())
-    c.get[List[String]]("required").toOption.filter(_.nonEmpty).foreach(r => b.required(r.asJava))
-    b.build()
-
 /** 1回の応答. */
-final case class Turn(message: Message, inputTokens: Long, outputTokens: Long, cacheReadTokens: Long, cacheWriteTokens: Long = 0):
+final case class Turn(
+  message: Message,
+  inputTokens: Long,
+  outputTokens: Long,
+  cacheReadTokens: Long,
+  cacheWriteTokens: Long = 0) {
   def stop: Option[StopReason] = Option(message.stopReason().orElse(null))
+}
 
 /** モデルとのやりとり（テストでは決まった応答を返すものに差し替える）. */
-trait Llm:
-  def turn(model: String, maxTokens: Int, effort: String, fallbacks: Boolean, system: List[TextBlockParam], tools: List[ToolUnion],
-      messages: List[MessageParam]): IO[Turn]
+trait Llm {
+  def turn(
+    model: String,
+    maxTokens: Int,
+    effort: String,
+    fallbacks: Boolean,
+    system: List[TextBlockParam],
+    tools: List[ToolUnion],
+    messages: List[MessageParam]
+  ): IO[Turn]
+}
 
 /** Claude API の呼び出し（Anthropic の Java SDK）. ANTHROPIC_API_KEY（または SDK が読む資格情報）を使う. */
-final class Claude(client: AnthropicClient) extends Llm:
+final class Claude(
+  client: AnthropicClient) extends Llm {
 
   /**
    * 1ターンを送り、応答を全部受け取って返す. 長い応答（ファイルの書き換えなど）で HTTP がタイムアウトしないよう、ストリーミングで受けて組み立てる.
    * fallbacks は、安全のための分類で断られたときに、サーバー側で別のモデルに任せる（server-side-fallback のベータ）.
    */
-  def turn(model: String, maxTokens: Int, effort: String, fallbacks: Boolean, system: List[TextBlockParam], tools: List[ToolUnion],
-      messages: List[MessageParam]): IO[Turn] = IO.blocking {
+  def turn(
+    model: String,
+    maxTokens: Int,
+    effort: String,
+    fallbacks: Boolean,
+    system: List[TextBlockParam],
+    tools: List[ToolUnion],
+    messages: List[MessageParam]
+  ): IO[Turn] = IO.blocking {
     val b = MessageCreateParams.builder()
       .model(model)
       .maxTokens(maxTokens.toLong)
@@ -62,12 +58,22 @@ final class Claude(client: AnthropicClient) extends Llm:
       .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.of(effort)).build())
     // 会話の途中で前提（管理者・利用者の前提、連携したサービスのツール）が変わると、それまでの thinking のブロックは使えなくなる.
     // 合わなくなったブロックは捨てて続ける（失敗にしない）
-    b.putAdditionalBodyProperty("thinking", JsonValue.from(java.util.Map.of("type", "adaptive",
-      "block_binding", java.util.Map.of("prefix_mismatch_behavior", "drop_block"))))
+    b.putAdditionalBodyProperty(
+      "thinking",
+      JsonValue.from(java.util.Map.of(
+        "type",
+        "adaptive",
+        "block_binding",
+        java.util.Map.of("prefix_mismatch_behavior", "drop_block")
+      ))
+    )
     // Haiku にはサーバー側の代わりのモデルがない
     val useFallbacks = fallbacks && skakapo.shared.Models.fallbacks(model)
-    b.putAdditionalHeader("anthropic-beta",
-      (List("thinking-binding-controls-2026-08-01") ++ Option.when(useFallbacks)("server-side-fallback-2026-07-01")).mkString(","))
+    b.putAdditionalHeader(
+      "anthropic-beta",
+      (List("thinking-binding-controls-2026-08-01") ++
+        Option.when(useFallbacks)("server-side-fallback-2026-07-01")).mkString(",")
+    )
     if useFallbacks then b.putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
     // 会話の部分もキャッシュする（最後のブロックまで. 毎ターン会話全体を、キャッシュなしの入力として払わない）
     b.cacheControl(CacheControlEphemeral.builder().build())
@@ -77,16 +83,33 @@ final class Claude(client: AnthropicClient) extends Llm:
     finally stream.close()
     val m = acc.message()
     val u = m.usage()
-    Turn(m, u.inputTokens(), u.outputTokens(), u.cacheReadInputTokens().orElse(0L), u.cacheCreationInputTokens().orElse(0L))
+    Turn(
+      m,
+      u.inputTokens(),
+      u.outputTokens(),
+      u.cacheReadInputTokens().orElse(0L),
+      u.cacheCreationInputTokens().orElse(0L)
+    )
   }
+}
 
-object Claude:
+object Claude {
+
   /** API キーがなければ None（エージェントは動かせないが、画面と設定は使える）. */
   def fromEnv: Option[Claude] =
-    sys.env.get("ANTHROPIC_API_KEY").map(_.trim).filter(_.nonEmpty).map(k => new Claude(AnthropicOkHttpClient.builder().apiKey(k).build()))
+    sys.env.get("ANTHROPIC_API_KEY").map(_.trim).filter(_.nonEmpty).map(k =>
+      new Claude(AnthropicOkHttpClient.builder().apiKey(k).build())
+    )
 
   /** キャッシュする文（システムプロンプトの変わらない部分）. 1時間残す. */
-  def cached(text: String): TextBlockParam =
-    TextBlockParam.builder().text(text).cacheControl(CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.TTL_1H).build()).build()
+  def cached(
+    text: String
+  ): TextBlockParam =
+    TextBlockParam.builder().text(
+      text
+    ).cacheControl(CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.TTL_1H).build()).build()
 
-  def text(t: String): TextBlockParam = TextBlockParam.builder().text(t).build()
+  def text(
+    t: String
+  ): TextBlockParam = TextBlockParam.builder().text(t).build()
+}

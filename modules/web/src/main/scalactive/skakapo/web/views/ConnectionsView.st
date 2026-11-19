@@ -50,7 +50,7 @@ def tokenOpen(s: State, c: ConnectionDto) = s.tokenFor.mapC(_.contains(c.service
 <template>
   <div class="page narrow">
     <h1>連携</h1>
-    <p class="muted">エージェントは、ここで連携したサービスを、あなたの権限で読み書きします。各サービスで許可すると、トークンが skakapo に暗号化して保存されます（連携をやめると削除されます）。</p>
+    <p class="muted">エージェントは、ここで連携したサービスを、あなたの権限で読み書きします。各サービスで許可すると、トークンが {{ AppNames.self }} に暗号化して保存されます（連携をやめると削除されます）。</p>
     <div v-if="s.list.mapC(_.isEmpty)" class="empty">連携できるサービスがありません（管理者がサービスを設定します）。</div>
     <div class="cards">
       <div v-for="c in s.list" :key="c.service.id.toString" class="card svc">

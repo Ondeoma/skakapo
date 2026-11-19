@@ -32,7 +32,7 @@ def mounted(): Unit = pageTitle("ログイン")
   <div class="page narrow">
     <div class="card login">
       <img src="/logo.svg" alt="" width="88" height="88" class="logo">
-      <h1>skakapo</h1>
+      <h1>{{ AppNames.self }}</h1>
       <p v-if="loggedOut" class="ok">ログアウトしました。</p>
       <template v-if="oidc">
         <p class="muted">組織のアカウント（OpenID Connect）でログインします。</p>

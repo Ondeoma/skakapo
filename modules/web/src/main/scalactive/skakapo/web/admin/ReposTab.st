@@ -116,7 +116,7 @@ def serviceKeys(s: State) = s.services.mapC(_.map(_.key))
     <div class="row head">
       <div class="grow">
         <h3>Git の共有アカウント</h3>
-        <p class="small muted">GitHub・Bitbucket・Forgejo などに skakapo 専用のユーザーを作り、そのトークンを登録します。トークンは暗号化して保存し、画面には戻しません。コミットには依頼者を Requested-by として書き添えます。</p>
+        <p class="small muted">GitHub・Bitbucket・Forgejo などに {{ AppNames.self }} 専用のユーザーを作り、そのトークンを登録します。トークンは暗号化して保存し、画面には戻しません。コミットには依頼者を Requested-by として書き添えます。</p>
       </div>
       <button @click="openAccount(s, None)">＋ アカウントを追加</button>
     </div>
@@ -159,7 +159,7 @@ def serviceKeys(s: State) = s.services.mapC(_.map(_.key))
       </template>
       <template v-if="isKind(e, GitAuthKind.GithubApp)">
         <p class="small muted">GitHub App を作り（権限: Contents と Pull requests の Read and write）、対象のリポジトリにインストールします。
-          skakapo は秘密鍵で署名して、そのリポジトリだけに絞った1時間のトークンを都度発行します。個人のトークンは要りません。</p>
+          {{ AppNames.self }} は秘密鍵で署名して、そのリポジトリだけに絞った1時間のトークンを都度発行します。個人のトークンは要りません。</p>
         <div class="row">
           <label class="field grow"><span>App ID（または Client ID）</span><input type="text" v-model="e.appId" placeholder="123456" required></label>
           <label class="field grow"><span>Installation ID（空ならリポジトリから自動で探す）</span><input type="text" v-model="e.installationId" inputmode="numeric"></label>
@@ -169,7 +169,7 @@ def serviceKeys(s: State) = s.services.mapC(_.map(_.key))
       </template>
       <template v-if="isKind(e, GitAuthKind.BitbucketOAuth)">
         <p class="small muted">ワークスペースの設定の「OAuth consumers」で、private consumer（権限: Repositories と Pull requests の Write）を作ります。
-          skakapo はキーとシークレットで、2時間のトークンを都度発行します（client credentials）。</p>
+          {{ AppNames.self }} はキーとシークレットで、2時間のトークンを都度発行します（client credentials）。</p>
         <div class="row">
           <label class="field grow"><span>キー（Key）</span><input type="text" v-model="e.appId" required autocomplete="off"></label>
           <label class="field grow"><span>{{ secretLabel(e) }}</span>

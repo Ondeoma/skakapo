@@ -2,10 +2,6 @@
 import skakapo.web.*
 import skakapo.web.parts.*
 import skakapo.shared.*
-import io.circe.Json
-
-import java.util.UUID
-import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
 // クレジット（Claude API の費用. ドル）: 全体の月の予算・利用者ごとの上限の既定と、人ごとの上限. 今月の使った額
 case class Edit(user: UserCreditDto, mode: RV[String], amount: RV[String])
@@ -75,7 +71,7 @@ def defaultText(s: State) = s.settings.mapC(_.flatMap(_.agent.defaultUserCapUsd)
 <template>
   <form class="panel" @submit.prevent="saveLimits(s)">
     <p><b>{{ totalText(s) }}</b></p>
-    <p class="small muted">金額は、skakapo が実行ごとにトークン数とモデルの単価から計算した Claude API の費用です（Anthropic のアカウントの残高とは別）。月は UTC で区切ります。上限・予算に達すると、新しい依頼と返事を断り、動いている作業も次のターンの前で止めます。</p>
+    <p class="small muted">金額は、{{ AppNames.self }} が実行ごとにトークン数とモデルの単価から計算した Claude API の費用です（Anthropic のアカウントの残高とは別）。月は UTC で区切ります。上限・予算に達すると、新しい依頼と返事を断り、動いている作業も次のターンの前で止めます。</p>
     <div class="row">
       <label class="field"><span>全体の月の予算（ドル. 空なら決めない）</span><input type="text" inputmode="decimal" v-model="s.budget" placeholder="例: 300"></label>
       <label class="field"><span>利用者ごとの月の上限の既定（ドル. 空なら上限なし）</span><input type="text" inputmode="decimal" v-model="s.defaultCap" placeholder="例: 20"></label>

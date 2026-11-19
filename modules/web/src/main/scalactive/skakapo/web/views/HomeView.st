@@ -55,7 +55,7 @@ def barClass(p: Int): String = if (p >= 100) "fill out" else if (p >= 80) "fill 
         <div class="bar"><div :class="barClass(r._3)" :style="barStyle(r._3)"></div></div>
         <span class="small">{{ r._2 }}</span>
       </div>
-      <p class="small muted note">今月の Claude API の費用（skakapo がトークン数とモデルの単価から計算したもの）。毎月1日（UTC）に戻ります。</p>
+      <p class="small muted note">今月の Claude API の費用（{{ AppNames.self }} がトークン数とモデルの単価から計算したもの）。毎月1日（UTC）に戻ります。</p>
     </div>
     <div v-if="empty(s)" class="empty">
       <p v-if="s.archived">アーカイブした依頼はありません。</p>

@@ -57,7 +57,7 @@ val periods: List[(String, String)] = List("30" -> "30日", "90" -> "90日", "36
 <template>
   <section class="panel">
     <h2>API トークンと MCP</h2>
-    <p class="small">API トークンを使うと、スクリプトから REST API を呼んだり、MCP に対応した AI アシスタントから、skakapo に依頼を出したり様子を聞いたりできます。
+    <p class="small">API トークンを使うと、スクリプトから REST API を呼んだり、MCP に対応した AI アシスタントから、{{ AppNames.self }} に依頼を出したり様子を聞いたりできます。
       権限はあなたと同じです（参照のみのトークンは読むだけ）。トークンはパスワードと同じように扱ってください。</p>
     <form class="row new" @submit.prevent="create(s)">
       <input type="text" class="grow" v-model="s.name" maxlength="100" placeholder="名前（例: AI アシスタント、集計スクリプト）">

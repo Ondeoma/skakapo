@@ -6,7 +6,12 @@ import skakapo.shared.*
 object Defaults {
 
   /** sBirds シリーズ（URL と OAuth のクライアントは、管理者が環境に合わせて入れる. 入れるまでは無効）. */
-  final case class ServiceSeed(key: String, name: String, kind: String, description: String, mcp: Boolean = true)
+  final case class ServiceSeed(
+    key: String,
+    name: String,
+    kind: String,
+    description: String,
+    mcp: Boolean = true)
 
   val services: List[ServiceSeed] = List(
     ServiceSeed("skea", "skea", ServiceKind.Sbirds, "プロジェクト管理（タスク・ボード・スプリント・ヘルプデスク）。不具合や依頼の起票先。"),
@@ -24,15 +29,21 @@ object Defaults {
   )
 
   /** sBirds シリーズの OAuth の入口（各サービスで共通）. */
-  def oauthFor(seed: ServiceSeed, baseUrl: String): OAuthConfig =
-    if (seed.kind == ServiceKind.Github) OAuthConfig("https://github.com/login/oauth/authorize", "https://github.com/login/oauth/access_token", "", "repo")
-    else if (baseUrl.nonEmpty) OAuthConfig(s"$baseUrl/oauth/authorize", s"$baseUrl/oauth/token", "", ServiceKind.sbirdsScopes(seed.key))
+  def oauthFor(
+    seed: ServiceSeed,
+    baseUrl: String
+  ): OAuthConfig =
+    if (seed.kind == ServiceKind.Github)
+      OAuthConfig("https://github.com/login/oauth/authorize", "https://github.com/login/oauth/access_token", "", "repo")
+    else if (baseUrl.nonEmpty)
+      OAuthConfig(s"$baseUrl/oauth/authorize", s"$baseUrl/oauth/token", "", ServiceKind.sbirdsScopes(seed.key))
     else OAuthConfig()
 
   val agent: AgentSettings = AgentSettings(baseContext =
     """- 回答・報告・コメント・プルリクエストの文章は日本語で書く。
       |- 社内のサービスの情報（利用者・タスク・ログなど）を、依頼に関係のない人や外部に送らない。
-      |- 分からないことは推測で進めず、調べるか利用者に確かめる。""".stripMargin)
+      |- 分からないことは推測で進めず、調べるか利用者に確かめる。""".stripMargin
+  )
 
   val trackers: List[TrackerSettings] = List(TrackerSettings())
 
@@ -63,47 +74,95 @@ object Defaults {
     """依頼の内容をよく読み、必要なら質問してから進める。サービスへの書き込みやコードの変更は、利用者の意図がはっきりしているときだけ行う。""".stripMargin
 
   private val service = FormField("service", "対象のサービス", FieldKind.Service, required = true)
+
   /** 件名は空でもよい（エージェントが内容から決める） */
-  private val titleField = FormField("title", "件名", FieldKind.Text, placeholder = "空なら内容から自動で決めます",
-    help = "空にすると、内容からエージェントが決めます（あとから変えられます）")
+  private val titleField = FormField(
+    "title",
+    "件名",
+    FieldKind.Text,
+    placeholder = "空なら内容から自動で決めます",
+    help = "空にすると、内容からエージェントが決めます（あとから変えられます）"
+  )
 
   val requestTypes: List[RequestTypeReq] = List(
-    RequestTypeReq("bug", "不具合の修正", "動きがおかしい・エラーになるものを調べて直します（起票・修正・プルリクエストまで）", "🐞", List(
-      service,
-      titleField.copy(placeholder = "例: タスクの一覧で期限順に並ばない（空なら自動）"),
-      FormField("description", "起きていること", FieldKind.Textarea, required = true),
-      FormField("steps", "再現の手順", FieldKind.Textarea, placeholder = "1. …を開く\n2. …を押す"),
-      FormField("expected", "期待する動き", FieldKind.Textarea),
-      FormField("urgency", "急ぎ度", FieldKind.Select, options = List("低", "中", "高"))
-    ), bugInstructions, 1),
-    RequestTypeReq("feature", "機能の追加", "新しい機能や改善の依頼（起票・方針の検討・小さければ実装まで）", "✨", List(
-      service,
-      titleField,
-      FormField("description", "ほしい機能", FieldKind.Textarea, required = true),
-      FormField("purpose", "目的・困っていること", FieldKind.Textarea)
-    ), featureInstructions, 2),
-    RequestTypeReq("investigation", "調査", "原因や状況を調べて報告します（ログ・データ・コード）", "🔎", List(
-      service.copy(required = false),
-      titleField,
-      FormField("question", "知りたいこと", FieldKind.Textarea, required = true),
-      FormField("scope", "期間・範囲", FieldKind.Text)
-    ), investigationInstructions, 3),
-    RequestTypeReq("other", "その他の依頼", "上のどれにも当てはまらない依頼", "💬", List(
-      titleField,
-      FormField("description", "内容", FieldKind.Textarea, required = true)
-    ), otherInstructions, 4)
+    RequestTypeReq(
+      "bug",
+      "不具合の修正",
+      "動きがおかしい・エラーになるものを調べて直します（起票・修正・プルリクエストまで）",
+      "🐞",
+      List(
+        service,
+        titleField.copy(placeholder = "例: タスクの一覧で期限順に並ばない（空なら自動）"),
+        FormField("description", "起きていること", FieldKind.Textarea, required = true),
+        FormField("steps", "再現の手順", FieldKind.Textarea, placeholder = "1. …を開く\n2. …を押す"),
+        FormField("expected", "期待する動き", FieldKind.Textarea),
+        FormField("urgency", "急ぎ度", FieldKind.Select, options = List("低", "中", "高"))
+      ),
+      bugInstructions,
+      1
+    ),
+    RequestTypeReq(
+      "feature",
+      "機能の追加",
+      "新しい機能や改善の依頼（起票・方針の検討・小さければ実装まで）",
+      "✨",
+      List(
+        service,
+        titleField,
+        FormField("description", "ほしい機能", FieldKind.Textarea, required = true),
+        FormField("purpose", "目的・困っていること", FieldKind.Textarea)
+      ),
+      featureInstructions,
+      2
+    ),
+    RequestTypeReq(
+      "investigation",
+      "調査",
+      "原因や状況を調べて報告します（ログ・データ・コード）",
+      "🔎",
+      List(
+        service.copy(required = false),
+        titleField,
+        FormField("question", "知りたいこと", FieldKind.Textarea, required = true),
+        FormField("scope", "期間・範囲", FieldKind.Text)
+      ),
+      investigationInstructions,
+      3
+    ),
+    RequestTypeReq(
+      "other",
+      "その他の依頼",
+      "上のどれにも当てはまらない依頼",
+      "💬",
+      List(
+        titleField,
+        FormField("description", "内容", FieldKind.Textarea, required = true)
+      ),
+      otherInstructions,
+      4
+    )
   )
 
   /** 利用者の種類の例（最初に入れる. 管理画面で変えられる）. どれにも当てはまらない人はオペレータ（既定）. */
   val userGroups: List[UserGroupReq] = List(
-    UserGroupReq("engineer", "エンジニア", "開発者・運用の担当者",
+    UserGroupReq(
+      "engineer",
+      "エンジニア",
+      "開発者・運用の担当者",
       """- ソースコード・ログ・設定に踏み込んで原因を調べる。
         |- 返事には、原因の箇所（リポジトリ・ファイル・行）、変更の内容、確かめた方法を具体的に書く。専門用語はそのまま使ってよい。
-        |- 修正できるときは、ブランチ・コミット・プルリクエストまで進め、その URL を伝える。""".stripMargin, position = 1),
-    UserGroupReq("operator", "オペレータ", "業務の担当者（開発者でない人）",
+        |- 修正できるときは、ブランチ・コミット・プルリクエストまで進め、その URL を伝える。""".stripMargin,
+      position = 1
+    ),
+    UserGroupReq(
+      "operator",
+      "オペレータ",
+      "業務の担当者（開発者でない人）",
       """- 専門用語やコードの細部は書かず、何が起きていて、何をしたか・これからどうなるかを短く伝える。
         |- 調べて修正が必要なら、起票先にタスクを作り、担当のエンジニアに知らせる（コメント・メンション）。
         |- 返事は「〇〇でタスクを作り、エンジニアに知らせました」のように、したことと、作ったものの URL、次に何が起きるかを書く。""".stripMargin,
-      isDefault = true, position = 2)
+      isDefault = true,
+      position = 2
+    )
   )
 }

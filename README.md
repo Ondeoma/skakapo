@@ -98,10 +98,8 @@ Scala 3（http4s・doobie・PostgreSQL）、Claude API は [Anthropic の Java S
 | `modules/shared` | バックエンドと画面（Scala.js）で共有する API の型と、入力の確かめ（circe） |
 | `modules/core` | エージェントの前提（システムプロンプト）の組み立て・既定の設定（依頼の種類・サービスの一覧） |
 | `modules/db` | PostgreSQL（doobie・Flyway）. 設定・サービス・リポジトリ・依頼の種類・連携・会話・出来事・実行の行列・ノード |
-| `modules/auth` | OIDC（Authorization Code + PKCE）、API トークン、秘密の値の暗号化 |
-| `modules/devidp` | 開発・テスト用の簡易 OIDC プロバイダ |
-| `modules/observe` | 観測（otel4s-oteljava） |
-| `modules/push` | プッシュ通知（Web Push・VAPID） |
+| `modules/auth` | API トークンの接頭辞・秘密の値の暗号化の salt（OIDC・暗号の中身は sbirds-lib の auth） |
+| `modules/devidp` | 開発・テスト用の簡易 OIDC プロバイダ（中身は sbirds-lib の devidp） |
 | `modules/agent` | Claude API（Anthropic の Java SDK）・各サービスの MCP のクライアント・OAuth の連携・Git の作業場所・GitHub・実行のループ・実行の取り合い |
 | `modules/api` | REST API・MCP |
 | `modules/app` | 起動（設定・HTTP サーバー・画面の配信） |

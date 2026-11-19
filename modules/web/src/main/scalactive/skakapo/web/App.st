@@ -31,6 +31,7 @@ def mounted(s: State): Unit = {
   if (path.startsWith("/login")) s.ready := true
   else Store.report(Api.me()) { me =>
     Store.me := Some(me)
+    AppNames.set(me.appNames)
     Observe.setUser(me.id.toString)
     Store.start()
     s.ready := true
@@ -72,7 +73,7 @@ def navClass(p: String) = Router.href.mapC { h =>
 <template>
   <header v-if="loggedIn" class="top">
     <button class="ghost icon only-sp" title="メニュー" @click="s.nav := !s.nav.v">☰</button>
-    <RouterLink to="/" class="logo"><span class="brand"><img src="/logo.svg" alt="" width="32" height="32"><span class="hide-sp">skakapo</span></span></RouterLink>
+    <RouterLink to="/" class="logo"><span class="brand"><img :src='AppNames.logo("/logo.svg").v' alt="" height="32" class="brand-logo"><span class="hide-sp">{{ AppNames.self }}</span></span></RouterLink>
     <nav class="navs hide-sp">
       <RouterLink v-for="n in nav" :to="n._1" :class="navClass(n._1)">{{ n._2 }}<span v-if='n._1 == "/" && hasBusy.v' class="badge">{{ busy }}</span></RouterLink>
     </nav>
@@ -113,6 +114,7 @@ def navClass(p: String) = Router.href.mapC { h =>
 .top::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--grad); opacity: .55; pointer-events: none; }
 .brand { font-weight: 700; font-size: 1.25rem; letter-spacing: .04em; color: var(--fg); display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap; margin-right: 1rem; }
 .brand img { display: block; }
+.brand-logo { width: auto; }
 .icon { font-size: 1.2rem; padding: .3rem .55rem; }
 .spacer { flex: 1; }
 .credit { --c: var(--accent); font-family: var(--mono); font-size: .74rem; letter-spacing: .03em; padding: .15rem .65rem; border-radius: 999px; white-space: nowrap; cursor: default;
