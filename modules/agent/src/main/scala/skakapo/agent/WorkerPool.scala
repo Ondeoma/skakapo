@@ -13,11 +13,7 @@ import java.time.Instant
 import scala.concurrent.duration.*
 
 /** node はこのノードの名前、slots は同時に動かせる実行の数. */
-final case class PoolConfig(
-  node: String,
-  version: String,
-  slots: Int = 2,
-  leaseSeconds: Int = 90)
+final case class PoolConfig(node: String, version: String, slots: Int = 2, leaseSeconds: Int = 90)
 
 /**
  * 実行の取り合い（冗長構成）. どのノードも DB の実行の行列を見て、空きがあれば1つずつ取る.
@@ -26,11 +22,7 @@ final case class PoolConfig(
  *  - 取った実行は借り（lease）を 30 秒ごとに延ばす. ノードが止まって借りが切れると、ほかのノードが続きから引き継ぐ（3回まで）
  *  - 利用者が止めたら、借りを延ばすときに分かるので、次のターン・ツールの前で止める
  */
-final class WorkerPool(
-  sessions: SessionStore,
-  nodes: NodeStore,
-  runner: Runner,
-  cfg: PoolConfig) {
+final class WorkerPool(sessions: SessionStore, nodes: NodeStore, runner: Runner, cfg: PoolConfig) {
 
   private val active = Ref.unsafe[IO, Int](0)
 
@@ -47,9 +39,7 @@ final class WorkerPool(
         .handleError(_ => List()).void).foreverM.background
     } yield ()
 
-  private def heartbeat(
-    started: Instant
-  ): IO[Unit] =
+  private def heartbeat(started: Instant): IO[Unit] =
     (active.get.flatMap(n => nodes.heartbeat(cfg.node, cfg.version, cfg.slots, n, started)).handleErrorWith(e =>
       Log.report(ErrorCode.HeartbeatFailed, e.toString, e)
     ) *> IO.sleep(10.seconds)).foreverM
@@ -65,11 +55,8 @@ final class WorkerPool(
         // 待っている実行がなければ、ほかのノードの空きは調べない
         val yieldToIdler = sessions.sweepAndHasQueued.flatMap {
           case false => IO.pure(None)
-          case true => (nodes.someoneIdler(cfg.node, n, cfg.slots), nodes.oldestWaitSeconds).mapN(
-              (
-                idler,
-                wait
-              ) => Some(idler && wait.forall(_ < 10))
+          case true => (nodes.someoneIdler(cfg.node, n, cfg.slots), nodes.oldestWaitSeconds).mapN((idler, wait) =>
+              Some(idler && wait.forall(_ < 10))
             )
         }
         yieldToIdler.flatMap {
@@ -89,9 +76,7 @@ final class WorkerPool(
       }
     }
 
-  private def execute(
-    r: Run
-  ): IO[Unit] = {
+  private def execute(r: Run): IO[Unit] = {
     // 引き継いだ実行に取り消しが頼まれていれば、最初から止める
     val cancelled = Ref.unsafe[IO, Boolean](r.cancelRequested)
     val lost = Ref.unsafe[IO, Boolean](false)
@@ -108,10 +93,7 @@ final class WorkerPool(
             IO.pure((RunStatus.Failed, Some(s"内部のエラー（${e.getClass.getSimpleName}）")))
         )
       }.flatMap {
-        (
-          status,
-          error
-        ) =>
+        (status, error) =>
           lost.get.flatMap {
             // ほかのノードに移った（借りが切れた）なら、そちらに任せる
             case true => Log.println(s"[skakapo] run ${r.id} moved to another node")

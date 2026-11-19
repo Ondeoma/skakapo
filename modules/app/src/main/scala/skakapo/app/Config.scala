@@ -11,25 +11,14 @@ import scala.concurrent.duration.*
 
 /** 設定は環境変数から読む. */
 object Config {
-  private def opt(
-    name: String
-  ): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
-  private def int(
-    name: String
-  ): Option[Int] = opt(name).flatMap(_.toIntOption)
-  private def enabled(
-    name: String
-  ): Boolean = opt(name).exists(_.equalsIgnoreCase("true"))
-  private def required(
-    name: String
-  ): Either[String, String] = opt(name).toRight(s"環境変数 $name を設定してください")
-  private def list(
-    name: String
-  ): List[String] = opt(name).toList.flatMap(_.split(Array(',', ' ')).map(_.trim).filter(_.nonEmpty))
+  private def opt(name: String): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
+  private def int(name: String): Option[Int] = opt(name).flatMap(_.toIntOption)
+  private def enabled(name: String): Boolean = opt(name).exists(_.equalsIgnoreCase("true"))
+  private def required(name: String): Either[String, String] = opt(name).toRight(s"環境変数 $name を設定してください")
+  private def list(name: String): List[String] =
+    opt(name).toList.flatMap(_.split(Array(',', ' ')).map(_.trim).filter(_.nonEmpty))
 
-  private def local(
-    url: String
-  ): Boolean =
+  private def local(url: String): Boolean =
     scala.util.Try(java.net.URI.create(url).getHost).toOption.flatMap(Option(_)).map(_.toLowerCase)
       .exists(h => Set("localhost", "127.0.0.1", "[::1]").contains(h) || h.endsWith(".localhost"))
 

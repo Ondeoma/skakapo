@@ -14,17 +14,12 @@ import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 /** git の HTTP 認証（その実行のあいだだけ使う）. url は認証のヘッダーを付けるリポジトリの URL（そのホストにだけ送る. 空ならどこにも送らない）. */
-final case class GitAuth(
-  username: String,
-  secret: String,
-  url: String = "")
+final case class GitAuth(username: String, secret: String, url: String = "")
 
 object GitAuth {
 
   /** https://host[:port] の部分（http.<url>.extraHeader の対象）. */
-  def origin(
-    url: String
-  ): Option[String] =
+  def origin(url: String): Option[String] =
     scala.util.Try(java.net.URI.create(url.trim)).toOption
       .filter(u => u.getScheme == "https" || u.getScheme == "http").filter(u =>
         u.getHost != null && u.getRawUserInfo == null
@@ -33,14 +28,10 @@ object GitAuth {
 }
 
 /** 作業の結果（ツールの結果の文と、失敗かどうか）. */
-final case class Out(
-  text: String,
-  isError: Boolean = false)
+final case class Out(text: String, isError: Boolean = false)
 
 object Out {
-  def err(
-    s: String
-  ): Out = Out(s, isError = true)
+  def err(s: String): Out = Out(s, isError = true)
 }
 
 /**
@@ -48,8 +39,7 @@ object Out {
  * エージェントには /workspace/<リポジトリ>/… というパスで見せる. 作業場所の外・.git の中は触らせない.
  * ほかのノードが続きを引き継いだときは作業場所がないので、取り出し直して push 済みのブランチから続ける.
  */
-final class Workspace(
-  val root: Path) {
+final class Workspace(val root: Path) {
 
   val Prefix = "/workspace"
 
@@ -58,9 +48,7 @@ final class Workspace(
    * 作業場所の外・.git の中（大文字小文字を問わない）・シンボリックリンクを経由するパスは扱わない
    * （リポジトリに置かれたリンクで、作業場所の外のファイルや .git/config を読み書きさせないため）.
    */
-  def resolve(
-    p: String
-  ): Either[String, Path] = {
+  def resolve(p: String): Either[String, Path] = {
     val rel = p.trim.stripPrefix(Prefix).stripPrefix("/")
     if rel.isEmpty then Right(root)
     else {
@@ -71,12 +59,7 @@ final class Workspace(
         if parts.exists(_.toString.equalsIgnoreCase(".git")) then Left(".git の中は扱えません")
         else {
           // root から順にたどり、途中（と最後）にシンボリックリンクがあれば断る
-          val chain = parts.scanLeft(root)(
-            (
-              acc,
-              x
-            ) => acc.resolve(x)
-          ).drop(1)
+          val chain = parts.scanLeft(root)((acc, x) => acc.resolve(x)).drop(1)
           if chain.exists(Files.isSymbolicLink) then Left(s"シンボリックリンクを経由するパスは扱えません: $p")
           else Right(r)
         }
@@ -84,27 +67,19 @@ final class Workspace(
     }
   }
 
-  def show(
-    p: Path
-  ): String = if p == root then Prefix else s"$Prefix/${root.relativize(p).toString.replace('\\', '/')}"
+  def show(p: Path): String = if p == root then Prefix else s"$Prefix/${root.relativize(p).toString.replace('\\', '/')}"
 
-  def repoDir(
-    name: String
-  ): Path = root.resolve(name)
+  def repoDir(name: String): Path = root.resolve(name)
 
   /** 自分で取り出したリポジトリか（.git がディレクトリとしてあり、リンクでない）. */
-  private def isCheckedOut(
-    dir: Path
-  ): Boolean =
+  private def isCheckedOut(dir: Path): Boolean =
     !Files.isSymbolicLink(dir) && Files.isDirectory(dir.resolve(".git"), LinkOption.NOFOLLOW_LINKS)
 
   /**
    * 書いてよい場所か: 取り出したリポジトリの中だけ. /workspace の直下やまだ取り出していない名前に書かせない
    * （偽の git の管理ファイル（config・HEAD など）を置いて、git の動きを変えさせないため）.
    */
-  private def writable(
-    p: Path
-  ): Either[String, Path] = {
+  private def writable(p: Path): Either[String, Path] = {
     val parts = root.relativize(p).iterator().asScala.toList
     Either.cond(
       parts.size >= 2 && isCheckedOut(root.resolve(parts.head.toString)),
@@ -123,12 +98,7 @@ final class Workspace(
    * git を実行する. auth があれば、その実行のあいだだけ HTTP の認証のヘッダーにする（.git/config やプロセスの引数には残さない）.
    * リポジトリの中身で git の動きを変えさせない（シンボリックリンクは普通のファイルとして取り出し、フック・fsmonitor・ext の転送は使わない）.
    */
-  def git(
-    dir: Path,
-    auth: Option[GitAuth],
-    timeout: FiniteDuration,
-    args: String*
-  ): IO[(Int, String)] = IO.blocking {
+  def git(dir: Path, auth: Option[GitAuth], timeout: FiniteDuration, args: String*): IO[(Int, String)] = IO.blocking {
     val pb = new ProcessBuilder(("git" +: args).asJava).directory(dir.toFile).redirectErrorStream(true)
     val env = pb.environment()
     // リポジトリの場所を明示する（親の階層を探させない. 作業場所に置かれた偽の管理ファイルを使わせない）
@@ -179,20 +149,13 @@ final class Workspace(
     } finally Files.deleteIfExists(log)
   }
 
-  private def ok(
-    r: (Int, String),
-    what: String
-  ): Either[String, String] =
+  private def ok(r: (Int, String), what: String): Either[String, String] =
     if r._1 == 0 then Right(r._2) else Left(s"$what に失敗しました（終了コード ${r._1}）:\n${r._2.take(3000)}")
 
   /**
    * リポジトリを取り出す. すでにあれば最新を取り込むだけ. branch を指定したら、そのブランチ（なければ既定のブランチから作る）にする.
    */
-  def checkout(
-    repo: RepositoryDto,
-    auth: Option[GitAuth],
-    branch: Option[String]
-  ): IO[Out] = {
+  def checkout(repo: RepositoryDto, auth: Option[GitAuth], branch: Option[String]): IO[Out] = {
     val dir = repoDir(repo.name)
     val token = auth.map(_.copy(url = repo.url))
     val prepare =
@@ -211,10 +174,7 @@ final class Workspace(
           case None => IO.pure(Right(()))
           case Some(b) =>
             git(dir, token, 1.minute, "rev-parse", "--verify", "--quiet", s"refs/remotes/origin/$b").flatMap {
-              (
-                code,
-                _
-              ) =>
+              (code, _) =>
                 if code == 0 then
                   git(dir, None, 1.minute, "checkout", "-B", b, s"origin/$b").map(ok(_, "git checkout").void)
                 else
@@ -228,10 +188,7 @@ final class Workspace(
           case Left(e) => IO.pure(Out.err(e))
           case Right(_) =>
             git(dir, None, 30.seconds, "rev-parse", "--abbrev-ref", "HEAD").map {
-              (
-                _,
-                cur
-              ) =>
+              (_, cur) =>
                 Out(s"$how: ${show(dir)}（ブランチ ${cur.trim}・既定のブランチ ${repo.defaultBranch}）")
             }
         }
@@ -239,24 +196,15 @@ final class Workspace(
   }
 
   /** 取り出したリポジトリの場所（まだなら、その旨のエラー）. */
-  private def checkedOut(
-    repo: RepositoryDto
-  )(
-    f: Path => IO[Out]
-  ): IO[Out] = {
+  private def checkedOut(repo: RepositoryDto)(f: Path => IO[Out]): IO[Out] = {
     val dir = repoDir(repo.name)
     if isCheckedOut(dir) then f(dir) else IO.pure(Out.err(s"${repo.name} はまだ取り出していません（checkout_repository）"))
   }
 
-  def diff(
-    repo: RepositoryDto
-  ): IO[Out] =
+  def diff(repo: RepositoryDto): IO[Out] =
     checkedOut(repo)(dir =>
       (git(dir, None, 30.seconds, "status", "--short"), git(dir, None, 30.seconds, "diff")).mapN {
-        (
-          st,
-          d
-        ) =>
+        (st, d) =>
           {
             val body = skakapo.core.Text.clip(d._2, 30000)
             Out(s"状態:\n${if st._2.isBlank then "（変更なし）" else st._2}\n差分:\n$body")
@@ -265,13 +213,11 @@ final class Workspace(
     )
 
   /** 変更をコミットして push する. 既定のブランチと skakapo/ で始まらないブランチには push しない. */
-  def commitAndPush(
-    repo: RepositoryDto,
-    branch: String,
-    message: String,
-    auth: Option[GitAuth],
-    author: (String, String)
-  ): IO[Out] = {
+  def commitAndPush(repo: RepositoryDto,
+                    branch: String,
+                    message: String,
+                    auth: Option[GitAuth],
+                    author: (String, String)): IO[Out] = {
     val token = auth.map(_.copy(url = repo.url))
     if branch == repo.defaultBranch || !branch.startsWith("skakapo/") || !branch.matches("^[A-Za-z0-9._/-]{1,120}$") ||
       branch.contains("..")
@@ -328,18 +274,13 @@ final class Workspace(
 
   // ---------------------------------------------------------------- 調べる
 
-  private def readText(
-    p: Path
-  ): Option[String] =
+  private def readText(p: Path): Option[String] =
     if Files.size(p) > 2_000_000 then None
     else
       try Some(Files.readString(p, StandardCharsets.UTF_8))
       catch case _: MalformedInputException => None
 
-  private def walk(
-    dir: Path,
-    max: Int
-  ): List[Path] = {
+  private def walk(dir: Path, max: Int): List[Path] = {
     val s = Files.walk(dir)
     try s.iterator().asScala.filter(p =>
         Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS) && !root.relativize(p).iterator().asScala.exists(n =>
@@ -349,9 +290,7 @@ final class Workspace(
     finally s.close()
   }
 
-  def listFiles(
-    path: String
-  ): IO[Out] = IO.blocking {
+  def listFiles(path: String): IO[Out] = IO.blocking {
     resolve(path) match {
       case Left(e) => Out.err(e)
       case Right(d) if !Files.isDirectory(d) => Out.err(s"${show(d)} はディレクトリではありません")
@@ -363,11 +302,7 @@ final class Workspace(
     }
   }
 
-  def search(
-    pattern: String,
-    path: String,
-    glob: Option[String]
-  ): IO[Out] = IO.blocking {
+  def search(pattern: String, path: String, glob: Option[String]): IO[Out] = IO.blocking {
     (
       resolve(path),
       scala.util.Try(java.util.regex.Pattern.compile(pattern)).toEither.leftMap(e => s"正規表現が正しくありません: ${e.getMessage}")
@@ -386,18 +321,10 @@ final class Workspace(
             files.iterator.takeWhile(_ => System.nanoTime() < deadline).filter(f =>
               matcher.forall(m => m.matches(f.getFileName) || m.matches(d.relativize(f)))
             ).flatMap { f =>
-              readText(f).iterator.flatMap(_.linesIterator.zipWithIndex.filter(
-                (
-                  l,
-                  _
-                ) => re.matcher(Workspace.Deadline(l, deadline)).find()
+              readText(f).iterator.flatMap(_.linesIterator.zipWithIndex.filter((l, _) =>
+                re.matcher(Workspace.Deadline(l, deadline)).find()
               )
-                .map(
-                  (
-                    l,
-                    i
-                  ) => s"${show(f)}:${i + 1}: ${l.take(300)}"
-                ))
+                .map((l, i) => s"${show(f)}:${i + 1}: ${l.take(300)}"))
             }.take(301).foreach(buf += _)
             System.nanoTime() >= deadline
           } catch case _: Workspace.TimedOut => true
@@ -410,9 +337,7 @@ final class Workspace(
 
   // ---------------------------------------------------------------- ファイルの表示・編集（Anthropic の text_editor_20250728 の形）
 
-  def textEditor(
-    in: ACursor
-  ): IO[Out] = IO.blocking {
+  def textEditor(in: ACursor): IO[Out] = IO.blocking {
     val cmd = in.get[String]("command").getOrElse("")
     in.get[String]("path").toOption.toRight("path を指定してください").flatMap(resolve)
       .flatMap(p => if cmd == "view" then Right(p) else writable(p)) match {
@@ -436,12 +361,7 @@ final class Workspace(
                     case Some(List(a, b)) => (a.max(1), if b == -1 then lines.size else b.min(lines.size))
                     case _ => (1, lines.size)
                   }
-                  val shown = lines.slice(from - 1, to).zipWithIndex.map(
-                    (
-                      l,
-                      i
-                    ) => f"${from + i}%6d\t$l"
-                  )
+                  val shown = lines.slice(from - 1, to).zipWithIndex.map((l, i) => f"${from + i}%6d\t$l")
                   val text = shown.mkString("\n")
                   Out(skakapo.core.Text.clip(text, 60000, "view_range で範囲を指定してください"))
               }
@@ -497,30 +417,21 @@ object Workspace {
   final class TimedOut extends RuntimeException("timeout", null, false, false)
 
   /** 読むたびに期限を確かめる文字列（正規表現の照合を、途中で止められるように）. */
-  final case class Deadline(
-    s: CharSequence,
-    until: Long) extends CharSequence {
+  final case class Deadline(s: CharSequence, until: Long) extends CharSequence {
     private var reads = 0
     def length: Int = s.length
-    def charAt(
-      i: Int
-    ): Char = {
+    def charAt(i: Int): Char = {
       // 短い行でも後戻りが爆発すると読む回数が増えるので、位置ではなく読んだ回数で確かめる
       reads += 1
       if (reads & 0xfff) == 0 && System.nanoTime() > until then throw new TimedOut
       s.charAt(i)
     }
-    def subSequence(
-      a: Int,
-      b: Int
-    ): CharSequence = Deadline(s.subSequence(a, b), until)
+    def subSequence(a: Int, b: Int): CharSequence = Deadline(s.subSequence(a, b), until)
     override def toString: String = s.toString
   }
 
   /** ディレクトリを中身ごと消す（リンクはたどらない. リンクそのものを消す）. */
-  def deleteTree(
-    dir: Path
-  ): Unit =
+  def deleteTree(dir: Path): Unit =
     if Files.isSymbolicLink(dir) || !Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS) then Files.deleteIfExists(dir)
     else {
       val s = Files.walk(dir)
@@ -528,10 +439,8 @@ object Workspace {
       finally s.close()
     }
 
-  def forSession(
-    base: Path,
-    sessionId: java.util.UUID
-  ): Workspace = new Workspace(base.resolve("sessions").resolve(sessionId.toString).toAbsolutePath.normalize())
+  def forSession(base: Path, sessionId: java.util.UUID): Workspace =
+    new Workspace(base.resolve("sessions").resolve(sessionId.toString).toAbsolutePath.normalize())
 }
 
 /**

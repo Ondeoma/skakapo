@@ -12,18 +12,13 @@ import skakapo.shared.{GitAccountDto, GitAuthKind, RepositoryDto}
 import scala.concurrent.duration.*
 
 /** 発行したトークン（expiresAt はミリ秒）と、コミットの作者の既定（GitHub App のボット）. */
-final case class AppToken(
-  auth: GitAuth,
-  expiresAt: Long,
-  author: Option[(String, String)])
+final case class AppToken(auth: GitAuth, expiresAt: Long, author: Option[(String, String)])
 
 /**
  * GitHub App・Bitbucket の OAuth コンシューマーの、短い期限のトークンを発行する. 期限の5分前までは覚えたものを使い回す.
  * GitHub App のトークンは、そのリポジトリと Contents・Pull requests の書き込みだけに絞って発行する（Bitbucket は絞れない）.
  */
-final class GitApps(
-  http: Client[IO],
-  hosts: GitHosts) {
+final class GitApps(http: Client[IO], hosts: GitHosts) {
 
   /** (アカウント, リポジトリ) → トークン. Bitbucket のトークンはリポジトリに縛られないので、リポジトリは空で覚える */
   private val cache = new TokenCache[(java.util.UUID, String), AppToken]
@@ -31,18 +26,10 @@ final class GitApps(
   /** (API の場所, App ID) → ボットの名前とメール（GitHub Enterprise と github.com で App ID が重なってもよいように） */
   private val bots = Ref.unsafe[IO, Map[(String, String), (String, String)]](Map.empty)
 
-  private def call(
-    method: Method,
-    url: String,
-    auth: Authorization,
-    body: Json = Json.Null
-  ): IO[(Status, Json)] =
+  private def call(method: Method, url: String, auth: Authorization, body: Json = Json.Null): IO[(Status, Json)] =
     hosts.send(method, url, auth, github = true, body)
 
-  private def jwtAuth(
-    a: GitAccountDto,
-    pem: String
-  ): IO[Either[String, Authorization]] =
+  private def jwtAuth(a: GitAccountDto, pem: String): IO[Either[String, Authorization]] =
     IO.realTime.map(t =>
       AppJwt.privateKey(pem).map(k =>
         Authorization(Credentials.Token(AuthScheme.Bearer, AppJwt.sign(a.appId, k, t.toSeconds)))
@@ -50,18 +37,11 @@ final class GitApps(
     )
 
   /** 鍵・シークレットでつながるか（保存する前の確かめ）. 表示用の名前（GitHub App の slug など）を返す. */
-  def probe(
-    a: GitAccountDto,
-    secret: String,
-    apiBase: String
-  ): IO[Either[String, String]] = a.authKind match {
+  def probe(a: GitAccountDto, secret: String, apiBase: String): IO[Either[String, String]] = a.authKind match {
     case GitAuthKind.GithubApp =>
       jwtAuth(a, secret).flatMap(_.flatTraverse(auth =>
         call(Method.GET, s"$apiBase/app", auth).map {
-          (
-            st,
-            j
-          ) =>
+          (st, j) =>
             if st.isSuccess then Right(j.hcursor.get[String]("slug").getOrElse(a.appId))
             else Left(s"GitHub App として認証できませんでした（${st.code}）: ${hosts.message(j)}。App ID と秘密鍵を確かめてください")
         }
@@ -71,12 +51,7 @@ final class GitApps(
   }
 
   /** そのリポジトリに使うトークン（覚えていればそれを使う）. */
-  def token(
-    a: GitAccountDto,
-    secret: String,
-    repo: RepositoryDto,
-    apiBase: String
-  ): IO[Either[String, AppToken]] = {
+  def token(a: GitAccountDto, secret: String, repo: RepositoryDto, apiBase: String): IO[Either[String, AppToken]] = {
     val (key, issue) = a.authKind match {
       case GitAuthKind.GithubApp => ((a.id, repo.name), github(a, secret, repo, apiBase))
       case GitAuthKind.BitbucketOAuth => ((a.id, ""), bitbucket(a, secret, apiBase))
@@ -88,16 +63,12 @@ final class GitApps(
   }
 
   /** 秘密が変わったとき（保存・削除したとき）に、覚えたトークンを捨てる. */
-  def forget(
-    accountId: java.util.UUID
-  ): IO[Unit] = cache.forget(_._1 == accountId)
+  def forget(accountId: java.util.UUID): IO[Unit] = cache.forget(_._1 == accountId)
 
-  private def github(
-    a: GitAccountDto,
-    pem: String,
-    repo: RepositoryDto,
-    apiBase: String
-  ): IO[Either[String, AppToken]] =
+  private def github(a: GitAccountDto,
+                     pem: String,
+                     repo: RepositoryDto,
+                     apiBase: String): IO[Either[String, AppToken]] =
     hosts.ownerRepo(repo.url) match {
       case None => IO.pure(Left(s"${repo.url} からオーナーとリポジトリを読み取れません"))
       case Some((owner, name)) =>
@@ -107,10 +78,7 @@ final class GitApps(
             if a.installationId.nonEmpty then IO.pure(Right(a.installationId))
             else
               call(Method.GET, s"$apiBase/repos/$owner/$name/installation", jwt).map {
-                (
-                  st,
-                  j
-                ) =>
+                (st, j) =>
                   j.hcursor.get[Long]("id").toOption.filter(_ => st.isSuccess).map(_.toString)
                     .toRight(s"$owner/$name に GitHub App が入っていません（${st.code}）。リポジトリ（または組織）に App をインストールしてください")
               }
@@ -124,10 +92,7 @@ final class GitApps(
                 "permissions" -> Json.obj("contents" -> "write".asJson, "pull_requests" -> "write".asJson)
               )
             ).flatMap {
-              (
-                st,
-                j
-              ) =>
+              (st, j) =>
                 (
                   j.hcursor.get[String]("token").toOption.filter(_ => st.isSuccess),
                   j.hcursor.get[String]("expires_at").toOption
@@ -151,11 +116,7 @@ final class GitApps(
     }
 
   /** GitHub App のボット（コミットの作者の既定）: <slug>[bot] と、GitHub が結び付ける noreply のメール. */
-  private def bot(
-    a: GitAccountDto,
-    jwt: Authorization,
-    apiBase: String
-  ): IO[Option[(String, String)]] =
+  private def bot(a: GitAccountDto, jwt: Authorization, apiBase: String): IO[Option[(String, String)]] =
     bots.get.map(_.get(apiBase -> a.appId)).flatMap {
       case some @ Some(_) => IO.pure(some)
       case None =>
@@ -175,11 +136,7 @@ final class GitApps(
    * Bitbucket Cloud の OAuth コンシューマー（client credentials）. API が api.bitbucket.org なら、トークンの入口は bitbucket.org.
    * このトークンはリポジトリに絞れない（コンシューマーの権限がそのまま付く）. 権限はコンシューマーの設定で絞る.
    */
-  private def bitbucket(
-    a: GitAccountDto,
-    secret: String,
-    apiBase: String
-  ): IO[Either[String, AppToken]] = {
+  private def bitbucket(a: GitAccountDto, secret: String, apiBase: String): IO[Either[String, AppToken]] = {
     val site = GitAuth.origin(apiBase).map(_.replace("://api.", "://")).getOrElse("https://bitbucket.org")
     (
       OAuthToken.request(
@@ -190,10 +147,7 @@ final class GitApps(
       ),
       IO.realTime
     ).mapN {
-      (
-        r,
-        now
-      ) =>
+      (r, now) =>
         r.map(t => AppToken(GitAuth("x-token-auth", t.access), t.expiresAt(now.toMillis), None))
           .leftMap(e =>
             s"Bitbucket の OAuth コンシューマーで認証できませんでした: $e。キーとシークレット、" +

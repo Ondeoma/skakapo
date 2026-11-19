@@ -65,12 +65,9 @@ class AgentSpec extends CatsEffectSuite {
 
   test("text editor（view・create・str_replace・insert）と search_code") {
     val ws = Workspace.forSession(tmp(), UUID.randomUUID())
-    def ed(
-      j: Json
-    ) = ws.textEditor(j.hcursor)
-    def create(
-      path: String
-    ) = ed(Json.obj("command" -> "create".asJson, "path" -> path.asJson, "file_text" -> "x".asJson))
+    def ed(j: Json) = ws.textEditor(j.hcursor)
+    def create(path: String) =
+      ed(Json.obj("command" -> "create".asJson, "path" -> path.asJson, "file_text" -> "x".asJson))
     for {
       // 取り出していない場所・/workspace の直下（偽の git の管理ファイル）には書けない
       n1 <- create("/workspace/r/a.txt")
@@ -128,10 +125,8 @@ class AgentSpec extends CatsEffectSuite {
     val seed = base.resolve("seed")
     val ws = Workspace.forSession(base, UUID.randomUUID())
     val repo = RepositoryDto(UUID.randomUUID(), "demo", origin.toUri.toString, "main", "", "", "", true)
-    def g(
-      dir: Path,
-      args: String*
-    ) = ws.git(dir, None, scala.concurrent.duration.Duration(30, "s"), args*).map(r => assertEquals(r._1, 0, r._2))
+    def g(dir: Path, args: String*) =
+      ws.git(dir, None, scala.concurrent.duration.Duration(30, "s"), args*).map(r => assertEquals(r._1, 0, r._2))
     for {
       _ <- IO.blocking(Files.createDirectories(seed))
       _ <- g(base, "init", "--bare", "-b", "main", origin.toString)
@@ -195,16 +190,10 @@ class AgentSpec extends CatsEffectSuite {
   }
 
   test("会話の修復: 結果のない tool_use に「分からない」を補う（途中・末尾・文字の発言のどれでも）") {
-    def use(
-      id: String
-    ) = Json.obj("type" -> "tool_use".asJson, "id" -> id.asJson, "name" -> "x".asJson, "input" -> Json.obj())
-    def res(
-      id: String
-    ) = Json.obj("type" -> "tool_result".asJson, "tool_use_id" -> id.asJson, "content" -> "ok".asJson)
-    def msg(
-      role: String,
-      content: Json
-    ) = Json.obj("role" -> role.asJson, "content" -> content)
+    def use(id: String) =
+      Json.obj("type" -> "tool_use".asJson, "id" -> id.asJson, "name" -> "x".asJson, "input" -> Json.obj())
+    def res(id: String) = Json.obj("type" -> "tool_result".asJson, "tool_use_id" -> id.asJson, "content" -> "ok".asJson)
+    def msg(role: String, content: Json) = Json.obj("role" -> role.asJson, "content" -> content)
     val t = Json.arr(
       msg("user", "はじめ".asJson),
       // a1 だけ結果がある（a2 は欠けている）
@@ -217,9 +206,7 @@ class AgentSpec extends CatsEffectSuite {
       msg("assistant", Json.arr(use("c1")))
     )
     val r = Transcript.repair(t).asArray.get.toList
-    def types(
-      m: Json
-    ) = m.hcursor.downField("content").as[List[Json]].getOrElse(Nil).map(b =>
+    def types(m: Json) = m.hcursor.downField("content").as[List[Json]].getOrElse(Nil).map(b =>
       b.hcursor.get[String]("type").getOrElse("") + b.hcursor.get[String]("tool_use_id").fold(_ => "", ":" + _)
     )
     assertEquals(r.size, 7)
@@ -289,9 +276,7 @@ class AgentSpec extends CatsEffectSuite {
     }
   }
 
-  private def rsaPem(
-    pkcs1: Boolean
-  ): (String, java.security.PublicKey) = {
+  private def rsaPem(pkcs1: Boolean): (String, java.security.PublicKey) = {
     val g = java.security.KeyPairGenerator.getInstance("RSA"); g.initialize(2048)
     val kp = g.generateKeyPair()
     val der = kp.getPrivate.getEncoded
@@ -407,9 +392,7 @@ class AgentSpec extends CatsEffectSuite {
 
   test("AWS SigV4: S3 以外はパスの各セグメントをもう一度打ち消す（S3 はそのまま）") {
     val t = java.time.Instant.parse("2015-08-30T12:36:00Z")
-    def auth(
-      svc: String
-    ) = SigV4.sign(
+    def auth(svc: String) = SigV4.sign(
       "GET",
       org.http4s.Uri.unsafeFromString("https://x.amazonaws.com/functions/arn%3Aaws%3Alambda/invocations"),
       Map.empty,
@@ -452,10 +435,8 @@ class AgentSpec extends CatsEffectSuite {
       cats.effect.Resource.eval(IO.raiseError(new Exception("送らない")))
     ))
     import skakapo.shared.CloudProvider.*
-    def cred(
-      p: String,
-      cfg: Map[String, String] = Map.empty
-    ) = skakapo.shared.CloudCredentialDto(UUID.randomUUID(), "c", p, cfg, true, "", true)
+    def cred(p: String, cfg: Map[String, String] = Map.empty) =
+      skakapo.shared.CloudCredentialDto(UUID.randomUUID(), "c", p, cfg, true, "", true)
     assert(cc.allowed(cred(Aws), "ec2.ap-northeast-1.amazonaws.com") &&
       !cc.allowed(cred(Aws), "amazonaws.com.evil.example") && !cc.allowed(cred(Aws), "example.com"))
     // だれでも作れるエンドポイント（API Gateway・S3 の静的サイト）には送らない

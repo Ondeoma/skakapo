@@ -18,10 +18,7 @@ import sbirds.http.Errors
  * MCP（Model Context Protocol）のサーバー. POST /mcp に JSON-RPC を送る（Streamable HTTP. 応答は JSON で、SSE は使わない）.
  * 認証は API トークン（Bearer）だけ. 各ツールは REST API をそのトークンで内部から呼ぶので、権限は REST API と同じになる.
  */
-final class McpRoutes(
-  api: HttpRoutes[IO],
-  sessions: SessionAuth,
-  version: String) extends Http4sDsl[IO] {
+final class McpRoutes(api: HttpRoutes[IO], sessions: SessionAuth, version: String) extends Http4sDsl[IO] {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "mcp" => postMcp(req)
@@ -29,9 +26,7 @@ final class McpRoutes(
     case GET -> Root / "api" / "endpoints" => getEndpoints()
   }
 
-  private def postMcp(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postMcp(req: Request[IO]): IO[Response[IO]] =
     req.headers.get[Authorization] match {
       case Some(auth @ Authorization(Credentials.Token(AuthScheme.Bearer, _))) =>
         sessions.fromRequest(Request[IO](Method.POST, Uri.unsafeFromString("/mcp")).putHeaders(auth)).flatMap {
@@ -67,13 +62,8 @@ final class McpRoutes(
 
   // ------------------------------------------------------------------ REST API の内部呼び出し
 
-  private final class Caller(
-    auth: Authorization) {
-    def apply(
-      method: Method,
-      uri: Uri,
-      body: Option[Json] = None
-    ): IO[Either[String, Json]] = {
+  private final class Caller(auth: Authorization) {
+    def apply(method: Method, uri: Uri, body: Option[Json] = None): IO[Either[String, Json]] = {
       val req0 = Request[IO](method, uri).putHeaders(auth)
       val req = body.fold(req0)(req0.withEntity(_))
       api.run(req).value.flatMap {
@@ -87,33 +77,24 @@ final class McpRoutes(
       }
     }
 
-    def as[A: Decoder](
-      method: Method,
-      uri: Uri,
-      body: Option[Json] = None
-    ): IO[Either[String, A]] =
+    def as[A: Decoder](method: Method, uri: Uri, body: Option[Json] = None): IO[Either[String, A]] =
       apply(method, uri, body).map(_.flatMap(_.as[A].left.map(e => s"応答を読めません: ${e.getMessage}")))
   }
 
-  private def path(
-    segments: String*
-  ): Uri = Uri(path = Uri.Path(segments.toVector.map(Uri.Path.Segment(_)), absolute = true))
+  private def path(segments: String*): Uri =
+    Uri(path = Uri.Path(segments.toVector.map(Uri.Path.Segment(_)), absolute = true))
 
-  private final case class Ctx(
-    call: Caller)
+  private final case class Ctx(call: Caller)
 
   // ------------------------------------------------------------------ 引数
 
   private type Result = IO[Either[String, String]]
 
-  private final case class Tool(
-    name: String,
-    description: String,
-    schema: Json,
-    readOnly: Boolean,
-    destructive: Boolean = false
-  )(
-    val run: (Ctx, ACursor) => Result) {
+  private final case class Tool(name: String,
+                                description: String,
+                                schema: Json,
+                                readOnly: Boolean,
+                                destructive: Boolean = false)(val run: (Ctx, ACursor) => Result) {
     def json: Json = Json.obj(
       "name" -> name.asJson,
       "description" -> description.asJson,
@@ -126,41 +107,26 @@ final class McpRoutes(
     )
   }
 
-  private def need(
-    a: ACursor,
-    k: String
-  ): Either[String, String] = opt(a, k).filter(_.nonEmpty).toRight(s"$k を指定してください")
-  private def opt(
-    a: ACursor,
-    k: String
-  ): Option[String] = a.get[String](k).toOption.map(_.trim)
+  private def need(a: ACursor, k: String): Either[String, String] =
+    opt(a, k).filter(_.nonEmpty).toRight(s"$k を指定してください")
+  private def opt(a: ACursor, k: String): Option[String] = a.get[String](k).toOption.map(_.trim)
 
-  extension [A](
-    io: IO[Either[String, A]]
-  ) {
-    private def andThen[B](
-      f: A => IO[Either[String, B]]
-    ): IO[Either[String, B]] = io.flatMap(_.fold(e => IO.pure(Left(e)), f))
-    private def mapR[B](
-      f: A => B
-    ): IO[Either[String, B]] = io.map(_.map(f))
+  extension [A](io: IO[Either[String, A]]) {
+    private def andThen[B](f: A => IO[Either[String, B]]): IO[Either[String, B]] =
+      io.flatMap(_.fold(e => IO.pure(Left(e)), f))
+    private def mapR[B](f: A => B): IO[Either[String, B]] = io.map(_.map(f))
   }
 
   // ------------------------------------------------------------------ 会話
 
-  private def sessionId(
-    a: ACursor
-  ): Either[String, String] =
+  private def sessionId(a: ACursor): Either[String, String] =
     need(a, "session").filterOrElse(v => scala.util.Try(java.util.UUID.fromString(v)).isSuccess, "session は会話の ID です")
 
-  private def line(
-    s: SessionDto
-  ): String = s"- ${s.id}  [${SessionStatus.label(s.status)}] ${s.requestLabel}: ${s.title}（${s.updatedAt}）"
+  private def line(s: SessionDto): String =
+    s"- ${s.id}  [${SessionStatus.label(s.status)}] ${s.requestLabel}: ${s.title}（${s.updatedAt}）"
 
   /** 出来事を文にする（エージェントの発言・ツールの呼び出しと結果）. */
-  private def eventsText(
-    es: List[EventDto]
-  ): String = es.map { e =>
+  private def eventsText(es: List[EventDto]): String = es.map { e =>
     val c = e.data.hcursor
     e.kind match {
       case "user" => s"[利用者] ${c.get[String]("text").getOrElse("")}"
@@ -174,10 +140,7 @@ final class McpRoutes(
 
   private val tools: List[Tool] = List(
     Tool("list_request_types", "依頼の種類（不具合の修正・機能の追加・調査など）と、フォームの項目の一覧.", schema(Nil), readOnly = true) {
-      (
-        c,
-        _
-      ) =>
+      (c, _) =>
         c.call.as[List[RequestTypeDto]](Method.GET, path("api", "request-types")).mapR(_.map { t =>
           s"## ${t.key}: ${t.label}\n${t.description}\n" + t.fields.map(f =>
             s"- ${f.name}（${f.label}${if f.required then "・必須" else ""}${
@@ -187,10 +150,7 @@ final class McpRoutes(
         }.mkString("\n\n"))
     },
     Tool("list_sessions", "自分の会話（依頼）の一覧.", schema(Nil), readOnly = true) {
-      (
-        c,
-        _
-      ) =>
+      (c, _) =>
         c.call.as[List[SessionDto]](Method.GET, path("api", "sessions")).mapR(ss =>
           if ss.isEmpty then "会話はありません" else ss.map(line).mkString("\n")
         )
@@ -205,10 +165,7 @@ final class McpRoutes(
       ),
       readOnly = false
     ) {
-      (
-        c,
-        a
-      ) =>
+      (c, a) =>
         IO.pure(need(a, "requestType")).andThen(t =>
           c.call.as[SessionDto](
             Method.POST,
@@ -223,10 +180,7 @@ final class McpRoutes(
       schema(List("session"), "session" -> str("会話の ID")),
       readOnly = true
     ) {
-      (
-        c,
-        a
-      ) =>
+      (c, a) =>
         IO.pure(sessionId(a)).andThen(id => c.call.as[EventsDto](Method.GET, path("api", "sessions", id))).mapR { d =>
           s"${line(d.session)}\n" +
             (if d.session.links.nonEmpty then
@@ -241,36 +195,24 @@ final class McpRoutes(
       schema(List("session", "text"), "session" -> str("会話の ID"), "text" -> str("返事")),
       readOnly = false
     ) {
-      (
-        c,
-        a
-      ) =>
+      (c, a) =>
         (sessionId(a), need(a, "text")).tupled.fold(
           e => IO.pure(Left(e)),
-          (
-            id,
-            t
-          ) =>
+          (id, t) =>
             c.call(Method.POST, path("api", "sessions", id, "messages"), Some(Json.obj("text" -> t.asJson))).mapR(_ =>
               "送りました"
             )
         )
     },
     Tool("cancel_session", "エージェントの作業を止める.", schema(List("session"), "session" -> str("会話の ID")), readOnly = false) {
-      (
-        c,
-        a
-      ) =>
+      (c, a) =>
         IO.pure(sessionId(a)).andThen(id => c.call(Method.POST, path("api", "sessions", id, "cancel"))).mapR(_ =>
           "止めました"
         )
     },
 
     Tool("list_api_endpoints", "REST API の一覧. 専用のツールがない操作は call_api で行える.", schema(Nil), readOnly = true) {
-      (
-        _,
-        _
-      ) =>
+      (_, _) =>
         IO.pure(Right(ApiCatalog.all.map(e => s"${e.method} ${e.path} — ${e.description}").mkString("\n")))
     },
     Tool(
@@ -284,10 +226,7 @@ final class McpRoutes(
       ),
       readOnly = false
     ) {
-      (
-        c,
-        a
-      ) =>
+      (c, a) =>
         (need(a, "method").map(_.toUpperCase), need(a, "path")).tupled match {
           case Left(e) => IO.pure(Left(e))
           case Right((m, p)) =>
@@ -310,29 +249,16 @@ final class McpRoutes(
 
   // ------------------------------------------------------------------ JSON-RPC
 
-  private def ok(
-    id: Json,
-    result: Json
-  ): Json = Json.obj("jsonrpc" -> "2.0".asJson, "id" -> id, "result" -> result)
-  private def rpcFail(
-    id: Json,
-    code: Int,
-    msg: String
-  ): Json =
+  private def ok(id: Json, result: Json): Json = Json.obj("jsonrpc" -> "2.0".asJson, "id" -> id, "result" -> result)
+  private def rpcFail(id: Json, code: Int, msg: String): Json =
     Json.obj("jsonrpc" -> "2.0".asJson, "id" -> id, "error" -> Json.obj("code" -> code.asJson, "message" -> msg.asJson))
-  private def toolResult(
-    r: Either[String, String]
-  ): Json =
+  private def toolResult(r: Either[String, String]): Json =
     Json.obj(
       "content" -> Json.arr(Json.obj("type" -> "text".asJson, "text" -> r.merge.asJson)),
       "isError" -> r.isLeft.asJson
     )
 
-  private def handle(
-    call: Caller,
-    p: Principal,
-    msg: Json
-  ): IO[Option[Json]] = {
+  private def handle(call: Caller, p: Principal, msg: Json): IO[Option[Json]] = {
     val c = msg.hcursor
     val params = c.downField("params")
     c.downField("id").focus match {

@@ -21,70 +21,51 @@ import scala.jdk.OptionConverters.*
  * 1回の実行（利用者の発言から、エージェントが返事をするまで）を進める.
  * Claude の応答とツールの結果は1つごとに DB の transcript に保存するので、ノードが止まっても別のノードが続きから引き継げる.
  */
-final class Runner(
-  sessions: SessionStore,
-  users: UserStore,
-  config: ConfigStore,
-  connections: Connections,
-  claude: Option[Llm],
-  mcp: Mcp,
-  hosts: GitHosts,
-  push: Option[PushService],
-  workBase: Path,
-  credits: Credits,
-  box: Option[skakapo.auth.SecretBox],
-  clouds: CloudClients) {
+final class Runner(sessions: SessionStore,
+                   users: UserStore,
+                   config: ConfigStore,
+                   connections: Connections,
+                   claude: Option[Llm],
+                   mcp: Mcp,
+                   hosts: GitHosts,
+                   push: Option[PushService],
+                   workBase: Path,
+                   credits: Credits,
+                   box: Option[skakapo.auth.SecretBox],
+                   clouds: CloudClients) {
 
   private val MaxResultChars = 30000
 
   /** 前提（サービス・ツール・リポジトリ）. ツールは覚えているもの（だれかが連携したときに読んだもの）を使う. */
   def knowledge: IO[Knowledge] =
     (config.agent, config.trackers, config.services(enabledOnly = true), config.repositories(enabledOnly = true))
-      .mapN(
-        (
-          a,
-          t,
-          ss,
-          rs
-        ) => Knowledge(a, t, ss.map(s => s -> s.tools), rs)
-      )
+      .mapN((a, t, ss, rs) => Knowledge(a, t, ss.map(s => s -> s.tools), rs))
 
   /**
    * 使えるサービス（トークンと、そのときのツール. 読めなかったサービスは理由を返す）.
    * 利用者が自分で連携していればその権限で、していなければ（期限が切れていれば）エージェント専用アカウントで使う.
    */
-  private def linked(
-    userId: java.util.UUID,
-    services: List[ServiceDto]
-  ): IO[(List[Linked], Option[(ServiceDto, String)], List[String])] =
-    (connections.tokens(userId), connections.agentTokens).flatMapN(
-      (
-        tokens,
-        agents
-      ) =>
-        services.parTraverseN(4) { s =>
-          def use(
-            t: String,
-            viaAgent: Boolean
-          ) =
-            connections.tools(if viaAgent then connections.AgentKey else userId, s, t).attempt.map {
-              case Right(ts) => (Some(Linked(s, t, ts, viaAgent)), None, None)
-              case Left(e) => (None, None, Some(s"${s.name}（ツールを読めません: ${Text.errMsg(e, 120)}）"))
-            }
-          (tokens.get(s.id), agents.get(s.id)) match {
-            case (Some(Some(t)), _) if s.kind == ServiceKind.Github => IO.pure((None, Some(s -> t), None))
-            case _ if s.mcpUrl.isEmpty || s.kind == ServiceKind.Github => IO.pure((None, None, None))
-            case (Some(Some(t)), _) => use(t, viaAgent = false)
-            case (_, Some(a)) => use(a, viaAgent = true)
-            case (Some(None), None) => IO.pure((None, None, Some(s"${s.name}（連携の期限が切れました。画面の「連携」で連携し直してください）")))
-            case _ => IO.pure((None, None, None))
+  private def linked(userId: java.util.UUID,
+                     services: List[ServiceDto]): IO[(List[Linked], Option[(ServiceDto, String)], List[String])] =
+    (connections.tokens(userId), connections.agentTokens).flatMapN((tokens, agents) =>
+      services.parTraverseN(4) { s =>
+        def use(t: String, viaAgent: Boolean) =
+          connections.tools(if viaAgent then connections.AgentKey else userId, s, t).attempt.map {
+            case Right(ts) => (Some(Linked(s, t, ts, viaAgent)), None, None)
+            case Left(e) => (None, None, Some(s"${s.name}（ツールを読めません: ${Text.errMsg(e, 120)}）"))
           }
+        (tokens.get(s.id), agents.get(s.id)) match {
+          case (Some(Some(t)), _) if s.kind == ServiceKind.Github => IO.pure((None, Some(s -> t), None))
+          case _ if s.mcpUrl.isEmpty || s.kind == ServiceKind.Github => IO.pure((None, None, None))
+          case (Some(Some(t)), _) => use(t, viaAgent = false)
+          case (_, Some(a)) => use(a, viaAgent = true)
+          case (Some(None), None) => IO.pure((None, None, Some(s"${s.name}（連携の期限が切れました。画面の「連携」で連携し直してください）")))
+          case _ => IO.pure((None, None, None))
         }
+      }
     ).map(xs => (xs.flatMap(_._1), xs.flatMap(_._2).headOption, xs.flatMap(_._3)))
 
-  private def repair(
-    ms: List[MessageParam]
-  ): List[MessageParam] = {
+  private def repair(ms: List[MessageParam]): List[MessageParam] = {
     val enc = Jsons.encodeTranscript(ms)
     val fixed = Transcript.repair(enc)
     if fixed == enc then ms else Jsons.decodeTranscript(fixed)
@@ -94,18 +75,12 @@ final class Runner(
    * リポジトリごとの書き込みの認証. 共有アカウントを結び付けたリポジトリはそのアカウント、なければ利用者の GitHub の連携
    * （利用者のトークンは、リポジトリのホストが GitHub のサービスのホストと同じときだけ使う. ほかのホストへ送らない）.
    */
-  private def repoCreds(
-    repos: List[RepositoryDto],
-    github: Option[(ServiceDto, String)]
-  ): IO[Map[String, RepoCreds]] =
+  private def repoCreds(repos: List[RepositoryDto], github: Option[(ServiceDto, String)]): IO[Map[String, RepoCreds]] =
     repos.traverse { r =>
       r.accountId match {
         case Some(id) =>
           config.gitAccountWithToken(id).map(_.flatMap {
-            (
-              a,
-              enc
-            ) =>
+            (a, enc) =>
               box.flatMap(_.decrypt(enc)).map { secret =>
                 val api = GitHosts.apiFor(a.provider, a.apiUrl, r.url)
                 val author = Option.when(a.authorName.nonEmpty)(a.authorName ->
@@ -131,38 +106,26 @@ final class Runner(
               }
           })
         case None =>
-          IO.pure(github.filter(
-            (
-              svc,
-              _
-            ) =>
-              Links.host(r.url).exists(h =>
-                Links.host(if svc.baseUrl.nonEmpty then svc.baseUrl else "https://github.com").contains(h)
-              )
+          IO.pure(github.filter((svc, _) =>
+            Links.host(r.url).exists(h =>
+              Links.host(if svc.baseUrl.nonEmpty then svc.baseUrl else "https://github.com").contains(h)
+            )
           )
-            .map(
-              (
-                svc,
-                t
-              ) =>
-                r.name -> RepoCreds(
-                  GitProvider.Github,
-                  hosts.apiBase(svc.baseUrl),
-                  GitAuth("x-access-token", t),
-                  None,
-                  shared = false,
-                  "GitHub の連携"
-                )
+            .map((svc, t) =>
+              r.name -> RepoCreds(
+                GitProvider.Github,
+                hosts.apiBase(svc.baseUrl),
+                GitAuth("x-access-token", t),
+                None,
+                shared = false,
+                "GitHub の連携"
+              )
             ))
       }
     }.map(_.flatten.toMap)
 
   /** 実行する. cancelled は取り消しの合図（借りを延ばすときに分かる）. 終わった状態（done・failed・cancelled）と、失敗の理由を返す. */
-  def run(
-    r: Run,
-    cancelled: IO[Boolean],
-    node: String
-  ): IO[(String, Option[String])] =
+  def run(r: Run, cancelled: IO[Boolean], node: String): IO[(String, Option[String])] =
     sessions.find(r.sessionId).flatMap {
       case None => IO.pure((RunStatus.Failed, Some("会話が見つかりません")))
       case Some(s) =>
@@ -175,13 +138,7 @@ final class Runner(
         }
     }
 
-  private def go(
-    r: Run,
-    s: AgentSession,
-    u: User,
-    cancelled: IO[Boolean],
-    node: String
-  ): IO[(String, Option[String])] =
+  private def go(r: Run, s: AgentSession, u: User, cancelled: IO[Boolean], node: String): IO[(String, Option[String])] =
     claude match {
       case None =>
         val msg = "Claude API のキー（ANTHROPIC_API_KEY）が設定されていないため、エージェントを動かせません。管理者に連絡してください。"
@@ -193,10 +150,7 @@ final class Runner(
           // クラウドの資格情報: この利用者が使えるもので、秘密を復号できたものだけ（前提にも、それだけを書く）
           cloud <-
             config.enabledCloudCredentialsWithSecret.map(_.filter(_._1.usableBy(u.isAdmin, group.map(_.id))).flatMap(
-              (
-                c,
-                enc
-              ) => box.flatMap(_.decrypt(enc)).map(c -> _)
+              (c, enc) => box.flatMap(_.decrypt(enc)).map(c -> _)
             ))
           k = k0.copy(clouds = cloud.map(_._1))
           rt <- config.requestType(s.requestType)
@@ -267,17 +221,15 @@ final class Runner(
         } yield res
     }
 
-  private def loop(
-    cl: Llm,
-    a: AgentSettings,
-    s: AgentSession,
-    r: Run,
-    system: List[TextBlockParam],
-    tools: Toolset,
-    ms: List[MessageParam],
-    turn: Int,
-    cancelled: IO[Boolean]
-  ): IO[(String, Option[String])] =
+  private def loop(cl: Llm,
+                   a: AgentSettings,
+                   s: AgentSession,
+                   r: Run,
+                   system: List[TextBlockParam],
+                   tools: Toolset,
+                   ms: List[MessageParam],
+                   turn: Int,
+                   cancelled: IO[Boolean]): IO[(String, Option[String])] =
     cancelled.flatMap {
       // 「止めました」は WorkerPool が書く（借りを失ったときは何も書かない）
       case true => IO.pure((RunStatus.Cancelled, None))
@@ -292,29 +244,21 @@ final class Runner(
         }
     }
 
-  private def turnOnce(
-    cl: Llm,
-    a: AgentSettings,
-    s: AgentSession,
-    r: Run,
-    system: List[TextBlockParam],
-    tools: Toolset,
-    ms: List[MessageParam],
-    turn: Int,
-    cancelled: IO[Boolean]
-  ): IO[(String, Option[String])] = {
+  private def turnOnce(cl: Llm,
+                       a: AgentSettings,
+                       s: AgentSession,
+                       r: Run,
+                       system: List[TextBlockParam],
+                       tools: Toolset,
+                       ms: List[MessageParam],
+                       turn: Int,
+                       cancelled: IO[Boolean]): IO[(String, Option[String])] = {
     val node = r.node.getOrElse("")
     // 実行をまだ持っているときだけ書く. 持っていなければ（ほかのノードに移った）、ここで抜ける
-    def guarded(
-      write: IO[Boolean]
-    )(
-      rest: => IO[(String, Option[String])]
-    ) =
+    def guarded(write: IO[Boolean])(rest: => IO[(String, Option[String])]) =
       write.flatMap(if _ then rest
       else Log.report(ErrorCode.RunLost, s"run ${r.id} on $node").as((RunStatus.Cancelled, None)))
-    def append(
-      m: MessageParam
-    ) = sessions.appendTranscript(s.id, Jsons.encodeTranscript(List(m)), r.id, node)
+    def append(m: MessageParam) = sessions.appendTranscript(s.id, Jsons.encodeTranscript(List(m)), r.id, node)
     cl.turn(a.model, a.maxTokens, a.effort, a.fallbacks, system, tools.definitions, ms).attempt.flatMap {
       case Left(e) => apiError(s, e)
       case Right(t) =>
@@ -418,22 +362,13 @@ final class Runner(
   }
 
   /** 失敗を会話に書き、終わった状態にする. */
-  private def fail(
-    s: AgentSession,
-    msg: String
-  ): IO[(String, Option[String])] =
+  private def fail(s: AgentSession, msg: String): IO[(String, Option[String])] =
     sessions.event(s.id, "error", Json.obj("text" -> msg.asJson)).as((RunStatus.Failed, Some(msg)))
 
-  private def note(
-    s: AgentSession,
-    kind: String,
-    text: String
-  ): IO[Unit] = sessions.event(s.id, kind, Json.obj("text" -> text.asJson)).void
+  private def note(s: AgentSession, kind: String, text: String): IO[Unit] =
+    sessions.event(s.id, kind, Json.obj("text" -> text.asJson)).void
 
-  private def apiError(
-    s: AgentSession,
-    e: Throwable
-  ): IO[(String, Option[String])] = {
+  private def apiError(s: AgentSession, e: Throwable): IO[(String, Option[String])] = {
     val msg = e match {
       case _: RateLimitException => "Claude API の利用の上限に達しました。しばらく待ってから、もう一度返事をしてください。"
       case x: AnthropicServiceException => s"Claude API でエラーになりました（${x.statusCode()}）。しばらく待ってから、もう一度返事をしてください。"
@@ -443,10 +378,7 @@ final class Runner(
   }
 
   /** 終わったことを利用者に知らせる（プッシュ通知）. */
-  def notifyDone(
-    s: AgentSession,
-    status: String
-  ): IO[Unit] =
+  def notifyDone(s: AgentSession, status: String): IO[Unit] =
     // 利用者が止めたときは知らせない
     if status == RunStatus.Cancelled then IO.unit
     else

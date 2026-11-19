@@ -13,31 +13,24 @@ import skakapo.shared.ToolInfo
 import scala.concurrent.duration.*
 
 /** MCP のツール（Claude に渡すスキーマ付き）. */
-final case class McpTool(
-  info: ToolInfo,
-  schema: Json)
+final case class McpTool(info: ToolInfo, schema: Json)
 
 /** ツールの結果（MCP の content の文字を繋げたもの）. */
-final case class McpResult(
-  text: String,
-  isError: Boolean)
+final case class McpResult(text: String, isError: Boolean)
 
 /**
  * 各サービスの MCP（Streamable HTTP の JSON-RPC）を、利用者のトークンで呼ぶクライアント.
  * 応答が SSE（text/event-stream）で返ってきても、最初の data の JSON を読む.
  */
-final class Mcp(
-  http: Client[IO]) {
+final class Mcp(http: Client[IO]) {
   private val Version = "2025-06-18"
 
-  private def rpc(
-    url: String,
-    token: String,
-    session: Option[String],
-    method: String,
-    params: Json,
-    id: Option[Int]
-  ): IO[(Json, Option[String])] = {
+  private def rpc(url: String,
+                  token: String,
+                  session: Option[String],
+                  method: String,
+                  params: Json,
+                  id: Option[Int]): IO[(Json, Option[String])] = {
     val body = Json.obj(
       "jsonrpc" -> "2.0".asJson,
       "method" -> method.asJson,
@@ -83,12 +76,7 @@ final class Mcp(
    * セッションを使い回してから呼ぶ. セッションの期限切れ（404・session を含む 400）のときだけ、initialize し直して1回だけ送り直す
    * （時間切れ・5xx では送り直さない. 書き込みのツールが二重に実行されるため）.
    */
-  private def withSession[A](
-    url: String,
-    token: String
-  )(
-    f: Option[String] => IO[A]
-  ): IO[A] =
+  private def withSession[A](url: String, token: String)(f: Option[String] => IO[A]): IO[A] =
     sessions.get.map(_.get(url -> token)).flatMap {
       case Some(sid) => f(sid).handleErrorWith {
           case e: McpError if e.sessionExpired => sessions.update(_ - (url -> token)) *> fresh(url, token).flatMap(f)
@@ -99,19 +87,13 @@ final class Mcp(
       case None => fresh(url, token).flatMap(f)
     }
 
-  private def fresh(
-    url: String,
-    token: String
-  ): IO[Option[String]] =
+  private def fresh(url: String, token: String): IO[Option[String]] =
     open(url, token).flatTap(sid =>
       sessions.update(m => (if m.size > 1000 then Map.empty else m) + ((url -> token) -> sid))
     )
 
   /** initialize（と initialized の通知）をして、セッション ID（あれば）を返す. */
-  private def open(
-    url: String,
-    token: String
-  ): IO[Option[String]] =
+  private def open(url: String, token: String): IO[Option[String]] =
     rpc(
       url,
       token,
@@ -124,23 +106,13 @@ final class Mcp(
       ),
       Some(1)
     ).flatMap {
-      (
-        _,
-        sid
-      ) =>
+      (_, sid) =>
         rpc(url, token, sid, "notifications/initialized", Json.obj(), None).attempt.as(sid)
     }
 
-  def listTools(
-    url: String,
-    token: String
-  ): IO[List[McpTool]] =
+  def listTools(url: String, token: String): IO[List[McpTool]] =
     open(url, token).flatMap { sid =>
-      def page(
-        cursor: Option[String],
-        acc: List[McpTool],
-        n: Int
-      ): IO[List[McpTool]] =
+      def page(cursor: Option[String], acc: List[McpTool], n: Int): IO[List[McpTool]] =
         rpc(
           url,
           token,
@@ -149,10 +121,7 @@ final class Mcp(
           cursor.fold(Json.obj())(c => Json.obj("cursor" -> c.asJson)),
           Some(2 + n)
         ).flatMap {
-          (
-            res,
-            _
-          ) =>
+          (res, _) =>
             {
               val c = res.hcursor
               val tools = c.downField("tools").as[List[Json]].getOrElse(Nil).flatMap { t =>
@@ -177,19 +146,11 @@ final class Mcp(
       page(None, Nil, 0)
     }
 
-  def call(
-    url: String,
-    token: String,
-    tool: String,
-    args: Json
-  ): IO[McpResult] =
+  def call(url: String, token: String, tool: String, args: Json): IO[McpResult] =
     withSession(url, token)(sid =>
       rpc(url, token, sid, "tools/call", Json.obj("name" -> tool.asJson, "arguments" -> args), Some(10))
     ).map {
-      (
-        res,
-        _
-      ) =>
+      (res, _) =>
         {
           val c = res.hcursor
           val text = c.downField("content").as[List[Json]].getOrElse(Nil).map { b =>
@@ -202,10 +163,7 @@ final class Mcp(
     }
 }
 
-final case class McpError(
-  message: String,
-  auth: Boolean = false,
-  status: Int = 0,
-  rpc: Boolean = false) extends Exception(message) {
+final case class McpError(message: String, auth: Boolean = false, status: Int = 0, rpc: Boolean = false)
+  extends Exception(message) {
   def sessionExpired: Boolean = status == 404 || (status == 400 && message.toLowerCase.contains("session"))
 }

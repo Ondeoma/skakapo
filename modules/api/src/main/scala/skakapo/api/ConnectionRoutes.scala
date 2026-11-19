@@ -15,11 +15,8 @@ import skakapo.shared.*
 import java.util.UUID
 
 /** 利用者の連携（各サービスに OAuth でトークンを発行してもらう・API トークンを貼り付ける・やめる）. */
-final class ConnectionRoutes(
-  conns: Connections,
-  store: ConnectionStore,
-  config: ConfigStore,
-  val sessions: SessionAuth) extends RouteSupport {
+final class ConnectionRoutes(conns: Connections, store: ConnectionStore, config: ConfigStore, val sessions: SessionAuth)
+  extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "connections" => getConnections(req)
@@ -30,16 +27,10 @@ final class ConnectionRoutes(
     case req @ POST -> Root / "api" / "connections" / UuidVar(id) / "refresh" => postConnectionRefresh(req, id)
   }
 
-  private def getConnections(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getConnections(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u =>
       (config.services(enabledOnly = true), store.list(u.id), sessions.appNames(req)).flatMapN {
-        (
-          ss,
-          cs,
-          names
-        ) =>
+        (ss, cs, names) =>
           Ok(ss.map { s =>
             val c = cs.find(_.serviceId == s.id)
             // sbirds のサービスの名前は sruru に登録した表示名（なければ管理画面で付けた名前）
@@ -57,10 +48,7 @@ final class ConnectionRoutes(
       }
     )
 
-  private def postConnectionOauth(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postConnectionOauth(req: Request[IO], id: UUID): IO[Response[IO]] =
     interactive(req)(u =>
       service(id)(s =>
         conns.start(u.id, s, SafePath.of(param(req, "returnTo"), "/connections")).flatMap {
@@ -70,9 +58,7 @@ final class ConnectionRoutes(
       )
     )
 
-  private def getConnectionsCallback(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getConnectionsCallback(req: Request[IO]): IO[Response[IO]] =
     sessions.fromRequest(req).flatMap {
       case None => page(ErrorCode.ConnectionLoginExpired)
       case Some(p) =>
@@ -91,10 +77,7 @@ final class ConnectionRoutes(
         }
     }
 
-  private def putConnectionToken(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putConnectionToken(req: Request[IO], id: UUID): IO[Response[IO]] =
     interactive(req)(u =>
       service(id)(s =>
         body[ManualTokenReq](req)(r =>
@@ -108,16 +91,10 @@ final class ConnectionRoutes(
       )
     )
 
-  private def deleteConnection(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteConnection(req: Request[IO], id: UUID): IO[Response[IO]] =
     interactive(req)(u => conns.disconnect(u.id, id).ifM(NoContent(), err(ErrorCode.ConnectionNotFound)))
 
-  private def postConnectionRefresh(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postConnectionRefresh(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       service(id)(s =>
         conns.token(u.id, s.id).flatMap {
@@ -131,19 +108,13 @@ final class ConnectionRoutes(
       )
     )
 
-  private def service(
-    id: UUID
-  )(
-    f: ServiceDto => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def service(id: UUID)(f: ServiceDto => IO[Response[IO]]): IO[Response[IO]] =
     config.service(id).flatMap {
       case Some(s) if s.enabled => f(s)
       case _ => err(ErrorCode.ServiceNotFound)
     }
 
-  private def page(
-    code: ErrorCode,
-    detail: String | Null = null
-  ): IO[Response[IO]] = HtmlPage.error("連携できませんでした", code, "/connections", "連携の画面へ戻る", detail)
+  private def page(code: ErrorCode, detail: String | Null = null): IO[Response[IO]] =
+    HtmlPage.error("連携できませんでした", code, "/connections", "連携の画面へ戻る", detail)
 
 }

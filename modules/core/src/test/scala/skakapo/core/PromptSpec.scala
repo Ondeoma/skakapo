@@ -117,12 +117,7 @@ class PromptSpec extends munit.FunSuite {
   }
 
   test("利用者の種類: 付けた種類 → IdP のグループ（並び順） → 既定 の順に決まり、前提に回答の決まりが入る") {
-    def g(
-      key: String,
-      idp: List[String] = Nil,
-      default: Boolean = false,
-      pos: Int = 0
-    ) =
+    def g(key: String, idp: List[String] = Nil, default: Boolean = false, pos: Int = 0) =
       UserGroupDto(UUID.randomUUID(), key, key.toUpperCase, "", s"$key の決まり", idp, default, pos)
     val eng = g("engineer", List("dev"), pos = 1); val ops = g("operator", List("ops", "dev"), default = true, pos = 2)
     val all = List(ops, eng)

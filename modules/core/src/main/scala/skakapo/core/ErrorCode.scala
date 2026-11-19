@@ -7,10 +7,7 @@ package skakapo.core
  * 5xxx: 利用者の端末とプロフィール（50xx: プッシュ通知, 51xx: プロフィール・アイコン）,
  * 9xxx: サーバー内部・バックグラウンドの処理（90xx: 予期しないエラー, 91xx: DB, 92xx: 定期の処理・実行）.
  */
-enum ErrorCode(
-  val code: String,
-  val status: Int,
-  val message: String) extends sbirds.shared.ErrorCode {
+enum ErrorCode(val code: String, val status: Int, val message: String) extends sbirds.shared.ErrorCode {
   case ApiTokenReadOnly extends ErrorCode("SKAKAPO-1001", 403, "参照のみの API トークンでは変更できません")
   case AdminOnly extends ErrorCode("SKAKAPO-1002", 403, "管理者だけが使えます")
   case ApiTokenNotAllowed extends ErrorCode("SKAKAPO-1003", 403, "この操作は API トークンではできません")

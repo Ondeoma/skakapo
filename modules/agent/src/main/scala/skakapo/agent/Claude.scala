@@ -10,45 +10,39 @@ import com.anthropic.models.messages.*
 import scala.jdk.CollectionConverters.*
 
 /** 1回の応答. */
-final case class Turn(
-  message: Message,
-  inputTokens: Long,
-  outputTokens: Long,
-  cacheReadTokens: Long,
-  cacheWriteTokens: Long = 0) {
+final case class Turn(message: Message,
+                      inputTokens: Long,
+                      outputTokens: Long,
+                      cacheReadTokens: Long,
+                      cacheWriteTokens: Long = 0) {
   def stop: Option[StopReason] = Option(message.stopReason().orElse(null))
 }
 
 /** モデルとのやりとり（テストでは決まった応答を返すものに差し替える）. */
 trait Llm {
-  def turn(
-    model: String,
-    maxTokens: Int,
-    effort: String,
-    fallbacks: Boolean,
-    system: List[TextBlockParam],
-    tools: List[ToolUnion],
-    messages: List[MessageParam]
-  ): IO[Turn]
+  def turn(model: String,
+           maxTokens: Int,
+           effort: String,
+           fallbacks: Boolean,
+           system: List[TextBlockParam],
+           tools: List[ToolUnion],
+           messages: List[MessageParam]): IO[Turn]
 }
 
 /** Claude API の呼び出し（Anthropic の Java SDK）. ANTHROPIC_API_KEY（または SDK が読む資格情報）を使う. */
-final class Claude(
-  client: AnthropicClient) extends Llm {
+final class Claude(client: AnthropicClient) extends Llm {
 
   /**
    * 1ターンを送り、応答を全部受け取って返す. 長い応答（ファイルの書き換えなど）で HTTP がタイムアウトしないよう、ストリーミングで受けて組み立てる.
    * fallbacks は、安全のための分類で断られたときに、サーバー側で別のモデルに任せる（server-side-fallback のベータ）.
    */
-  def turn(
-    model: String,
-    maxTokens: Int,
-    effort: String,
-    fallbacks: Boolean,
-    system: List[TextBlockParam],
-    tools: List[ToolUnion],
-    messages: List[MessageParam]
-  ): IO[Turn] = IO.blocking {
+  def turn(model: String,
+           maxTokens: Int,
+           effort: String,
+           fallbacks: Boolean,
+           system: List[TextBlockParam],
+           tools: List[ToolUnion],
+           messages: List[MessageParam]): IO[Turn] = IO.blocking {
     val b = MessageCreateParams.builder()
       .model(model)
       .maxTokens(maxTokens.toLong)
@@ -102,14 +96,10 @@ object Claude {
     )
 
   /** キャッシュする文（システムプロンプトの変わらない部分）. 1時間残す. */
-  def cached(
-    text: String
-  ): TextBlockParam =
+  def cached(text: String): TextBlockParam =
     TextBlockParam.builder().text(
       text
     ).cacheControl(CacheControlEphemeral.builder().ttl(CacheControlEphemeral.Ttl.TTL_1H).build()).build()
 
-  def text(
-    t: String
-  ): TextBlockParam = TextBlockParam.builder().text(t).build()
+  def text(t: String): TextBlockParam = TextBlockParam.builder().text(t).build()
 }

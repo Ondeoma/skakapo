@@ -11,12 +11,10 @@ import scala.concurrent.duration.*
 
 /** OAuth のトークンの入口に頼む（認可コード・refresh token・client credentials・JWT bearer の共通）. 応答は 1MB まで. */
 object OAuthToken {
-  def request(
-    http: Client[IO],
-    url: String,
-    form: UrlForm,
-    auth: Option[Authorization] = None
-  ): IO[Either[String, TokenResponse]] =
+  def request(http: Client[IO],
+              url: String,
+              form: UrlForm,
+              auth: Option[Authorization] = None): IO[Either[String, TokenResponse]] =
     Uri.fromString(url).fold(
       _ => IO.pure(Left(s"トークンの入口の URL が正しくありません: $url")),
       uri => {

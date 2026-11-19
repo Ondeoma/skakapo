@@ -68,9 +68,7 @@ class FlowSpec extends munit.CatsEffectSuite {
           r.as[Json].flatMap { j =>
             val c = j.hcursor
             val id = c.downField("id").focus.getOrElse(Json.Null)
-            def ok(
-              res: Json
-            ) = Ok(Json.obj("jsonrpc" -> "2.0".asJson, "id" -> id, "result" -> res))
+            def ok(res: Json) = Ok(Json.obj("jsonrpc" -> "2.0".asJson, "id" -> id, "result" -> res))
             c.get[String]("method").getOrElse("") match {
               case "initialize" =>
                 ok(Json.obj("protocolVersion" -> "2025-06-18".asJson, "capabilities" -> Json.obj()))
@@ -107,20 +105,17 @@ class FlowSpec extends munit.CatsEffectSuite {
   }
 
   /** 決まった応答を返す偽の Claude. 受けたシステムプロンプトとツールの名前を残す. */
-  private final class FakeLlm(
-    script: List[String]) extends Llm {
+  private final class FakeLlm(script: List[String]) extends Llm {
     val systems = new ConcurrentLinkedQueue[String]()
     val toolNames = new ConcurrentLinkedQueue[List[String]]()
     private val step = Ref.unsafe[IO, Int](0)
-    def turn(
-      model: String,
-      maxTokens: Int,
-      effort: String,
-      fallbacks: Boolean,
-      system: List[TextBlockParam],
-      tools: List[ToolUnion],
-      messages: List[MessageParam]
-    ): IO[Turn] =
+    def turn(model: String,
+             maxTokens: Int,
+             effort: String,
+             fallbacks: Boolean,
+             system: List[TextBlockParam],
+             tools: List[ToolUnion],
+             messages: List[MessageParam]): IO[Turn] =
       step.getAndUpdate(_ + 1).map { i =>
         systems.add(system.map(_.text()).mkString("\n"))
         val tj = parse(ObjectMappers.jsonMapper().writeValueAsString(tools.asJava)).toOption.get
@@ -130,10 +125,7 @@ class FlowSpec extends munit.CatsEffectSuite {
       }
   }
 
-  private def msg(
-    stop: String,
-    content: String
-  ): String =
+  private def msg(stop: String, content: String): String =
     s"""{"id":"msg_x","type":"message","role":"assistant","model":"claude-opus-5-5","content":$content,"stop_reason":"$stop","stop_sequence":null,
        |"usage":{"input_tokens":100,"output_tokens":20}}""".stripMargin
 
@@ -150,9 +142,7 @@ class FlowSpec extends munit.CatsEffectSuite {
     msg("end_turn", """[{"type":"text","text":"SKEA-7 を起票しました。"}]""")
   ))
 
-  private final case class Env(
-    app: HttpApp[IO],
-    xa: doobie.Transactor[IO])
+  private final case class Env(app: HttpApp[IO], xa: doobie.Transactor[IO])
 
   private val fixture = ResourceSuiteLocalFixture(
     "app",
@@ -199,10 +189,7 @@ class FlowSpec extends munit.CatsEffectSuite {
 
   override def munitFixtures = List(fixture)
 
-  private def login(
-    name: String,
-    admin: Boolean
-  ): IO[String] =
+  private def login(name: String, admin: Boolean): IO[String] =
     fixture().app.run(Request[IO](
       Method.POST,
       uri"/auth/dev-login"
@@ -211,12 +198,7 @@ class FlowSpec extends munit.CatsEffectSuite {
       r.cookies.find(_.name == "skakapo_session").map(_.content).getOrElse(fail("no cookie"))
     )
 
-  private def call(
-    ck: String,
-    m: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[Response[IO]] = {
+  private def call(ck: String, m: Method, path: String, body: Option[Json] = None): IO[Response[IO]] = {
     val r = Request[IO](
       m,
       Uri.unsafeFromString(path)
@@ -224,13 +206,11 @@ class FlowSpec extends munit.CatsEffectSuite {
     fixture().app.run(body.fold(r)(r.withEntity(_)))
   }
 
-  private def json(
-    ck: String,
-    m: Method,
-    path: String,
-    body: Option[Json] = None,
-    expect: Status = Status.Ok
-  ): IO[Json] =
+  private def json(ck: String,
+                   m: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   expect: Status = Status.Ok): IO[Json] =
     call(ck, m, path, body).flatMap(r =>
       r.as[Json].handleError(_ => Json.Null).map { j => assertEquals(r.status, expect, j.noSpaces); j }
     )
@@ -636,10 +616,7 @@ class FlowSpec extends munit.CatsEffectSuite {
   }
 
   test("利用者の種類: IdP のグループか管理者が付けた種類で決まり、その回答の決まりが前提に入る") {
-    def devLogin(
-      name: String,
-      groups: List[String]
-    ): IO[String] =
+    def devLogin(name: String, groups: List[String]): IO[String] =
       fixture().app.run(Request[IO](
         Method.POST,
         uri"/auth/dev-login"
@@ -882,12 +859,7 @@ class FlowSpec extends munit.CatsEffectSuite {
     } yield ()
   }
 
-  private def upload(
-    ck: String,
-    name: String,
-    ct: MediaType,
-    data: Array[Byte]
-  ): IO[Response[IO]] =
+  private def upload(ck: String, name: String, ct: MediaType, data: Array[Byte]): IO[Response[IO]] =
     fixture().app.run(Request[IO](
       Method.POST,
       Uri.unsafeFromString(s"/api/attachments?name=${java.net.URLEncoder.encode(name, "UTF-8")}")
@@ -895,10 +867,7 @@ class FlowSpec extends munit.CatsEffectSuite {
       .withEntity(data)(using EntityEncoder.byteArrayEncoder)
       .putHeaders(Cookie(RequestCookie("skakapo_session", ck)), "X-Skakapo" -> "1", headers.`Content-Type`(ct)))
 
-  private def idle(
-    ck: String,
-    id: UUID
-  ): IO[EventsDto] =
+  private def idle(ck: String, id: UUID): IO[EventsDto] =
     (json(ck, Method.GET, s"/api/sessions/$id/events?after=0&wait=2").map(_.as[EventsDto].toOption.get)
       .flatMap(d =>
         if d.session.status == SessionStatus.Idle && d.run.forall(_.status == "done") then IO.pure(Some(d))

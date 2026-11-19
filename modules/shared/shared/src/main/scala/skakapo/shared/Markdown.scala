@@ -11,9 +11,7 @@ import scala.collection.mutable
  */
 object Markdown {
 
-  def esc(
-    s: String
-  ): String =
+  def esc(s: String): String =
     s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
 
   // ---------------------------------------------------------------- インライン
@@ -27,21 +25,15 @@ object Markdown {
   private val italicRe = "(^|[^*\\w])\\*([^*\\s][^*]*?)\\*(?![*\\w])".r
   private val strikeRe = "~~([^~]+)~~".r
 
-  private def a(
-    href: String,
-    label: String
-  ) = s"""<a href="$href" target="_blank" rel="noopener noreferrer">$label</a>"""
-  private def q(
-    s: String
-  ) = java.util.regex.Matcher.quoteReplacement(s)
+  private def a(href: String, label: String) =
+    s"""<a href="$href" target="_blank" rel="noopener noreferrer">$label</a>"""
+  private def q(s: String) = java.util.regex.Matcher.quoteReplacement(s)
 
   /**
    * 1行の中. コードの中は飾らない. 太字などがコードをまたいでもよいよう、先にコードを目印（\u0001番号\u0002）に置き換えてから
    * 行全体に書式をかけ、最後にコードを戻す.
    */
-  def fmtInline(
-    raw: String
-  ): String = if (raw.length > MaxLine) esc(raw)
+  def fmtInline(raw: String): String = if (raw.length > MaxLine) esc(raw)
   else {
     val parts = raw.split("`", -1).toList
     val codes = mutable.ArrayBuffer[String]()
@@ -72,24 +64,17 @@ object Markdown {
   private val taskRe = "^\\[([ xX])\\]\\s+(.*)$".r
   private val sepCell = "^\\s*:?-{2,}:?\\s*$".r
 
-  private def cells(
-    line: String
-  ): List[String] = {
+  private def cells(line: String): List[String] = {
     val t = line.trim.stripPrefix("|")
     val body = if (t.endsWith("|") && !t.endsWith("\\|")) t.dropRight(1) else t
     // \| は列の区切りにしない
     body.replace("\\|", "\u0000").split("\\|", -1).toList.map(_.replace("\u0000", "|").trim)
   }
-  private def isTableSep(
-    line: String
-  ): Boolean = line.contains("-") && line.contains("|") && cells(line).forall(c => sepCell.pattern.matcher(c).matches())
-  private def isTableRow(
-    line: String
-  ): Boolean = line.contains("|") && line.trim.nonEmpty
+  private def isTableSep(line: String): Boolean = line.contains("-") && line.contains("|") &&
+    cells(line).forall(c => sepCell.pattern.matcher(c).matches())
+  private def isTableRow(line: String): Boolean = line.contains("|") && line.trim.nonEmpty
 
-  private def align(
-    sep: String
-  ): String = {
+  private def align(sep: String): String = {
     val c = sep.trim
     if (c.startsWith(":") && c.endsWith(":")) " style=\"text-align:center\""
     else if (c.endsWith(":")) " style=\"text-align:right\""
@@ -97,9 +82,7 @@ object Markdown {
   }
 
   /** 見出しの本文: 末尾の空白と、空白の後ろの閉じの # を落とす（「C#」の # は残す）. */
-  private def heading(
-    body: String
-  ): String = {
+  private def heading(body: String): String = {
     val t = body.trim
     val noHashes = t.reverse.dropWhile(_ == '#').reverse
     if (noHashes.length < t.length && (noHashes.isEmpty || noHashes.last.isWhitespace)) noHashes.trim else t
@@ -116,21 +99,13 @@ object Markdown {
   private val MaxDepth = 8
 
   /** 箇条書きの項目（入れ子は字下げで決める）. */
-  private final case class Item(
-    indent: Int,
-    ordered: Boolean,
-    start: Int,
-    text: String)
+  private final case class Item(indent: Int, ordered: Boolean, start: Int, text: String)
 
-  private def renderList(
-    items: List[Item]
-  ): String = {
+  private def renderList(items: List[Item]): String = {
     val out = new StringBuilder
     // (字下げ, 番号つき) の積み重ね
     val stack = mutable.Stack[(Int, Boolean)]()
-    def open(
-      it: Item
-    ): Unit = {
+    def open(it: Item): Unit = {
       out ++= (if (it.ordered) (if (it.start != 1) s"""<ol start="${it.start}">""" else "<ol>") else "<ul>")
       stack.push(it.indent -> it.ordered)
     }
@@ -155,14 +130,9 @@ object Markdown {
     out.toString
   }
 
-  def toHtml(
-    md: String
-  ): String = render(md, 0)
+  def toHtml(md: String): String = render(md, 0)
 
-  private def render(
-    md: String,
-    depth: Int
-  ): String = {
+  private def render(md: String, depth: Int): String = {
     // 改行のたぐい（\r・U+0085・U+2028・U+2029）は \n にそろえる（正規表現の . や $ が行の途中で止まらないように）
     val lines = md.replace("\r\n", "\n").replaceAll("[\r\u0085\u2028\u2029]", "\n").split("\n", -1).toVector
     val out = new StringBuilder
@@ -197,10 +167,7 @@ object Markdown {
           flushPara()
           val head = cells(l).take(MaxCols)
           val aligns = cells(lines(i + 1)).map(align)
-          def td(
-            tag: String,
-            cs: List[String]
-          ) = head.indices.map(k =>
+          def td(tag: String, cs: List[String]) = head.indices.map(k =>
             s"<$tag${aligns.lift(k).getOrElse("")}>${fmtInline(cs.lift(k).getOrElse(""))}</$tag>"
           ).mkString
           out ++= s"""<div class="table-scroll"><table><thead><tr>${td("th", head)}</tr></thead><tbody>"""

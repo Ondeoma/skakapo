@@ -2,10 +2,7 @@ package skakapo.api
 
 /** REST API の一覧（MCP の list_api_endpoints と GET /api/endpoints）. */
 object ApiCatalog {
-  final case class Endpoint(
-    method: String,
-    path: String,
-    description: String)
+  final case class Endpoint(method: String, path: String, description: String)
   val all: List[Endpoint] = List(
     Endpoint("GET", "/api/me", "自分の情報"),
     Endpoint("GET", "/api/me/credit", "今月のクレジット（自分の使った額・上限・残り、全体の予算と残り）"),

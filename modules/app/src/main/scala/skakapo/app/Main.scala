@@ -23,17 +23,16 @@ import sbirds.http.Errors
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
-final case class AppConfig(
-  port: Int,
-  db: DbConfig,
-  oidc: Option[OidcConfig],
-  api: ApiConfig,
-  staticDir: Option[String],
-  appSecret: Option[String],
-  node: String,
-  slots: Int,
-  workDir: String,
-  bindHost: com.comcast.ip4s.Host)
+final case class AppConfig(port: Int,
+                           db: DbConfig,
+                           oidc: Option[OidcConfig],
+                           api: ApiConfig,
+                           staticDir: Option[String],
+                           appSecret: Option[String],
+                           node: String,
+                           slots: Int,
+                           workDir: String,
+                           bindHost: com.comcast.ip4s.Host)
 
 object Main extends IOApp.Simple {
 
@@ -147,10 +146,7 @@ object Main extends IOApp.Simple {
     } yield ()
 
   /** DB が使えるまで待ってからマイグレーションする. */
-  private def migrateWithRetry(
-    cfg: AppConfig,
-    attempt: Int = 1
-  ): IO[Int] =
+  private def migrateWithRetry(cfg: AppConfig, attempt: Int = 1): IO[Int] =
     Database.migrate(cfg.db).handleErrorWith { e =>
       if attempt >= 60 then IO.raiseError(e)
       else
@@ -158,9 +154,7 @@ object Main extends IOApp.Simple {
           IO.sleep(2.seconds) *> migrateWithRetry(cfg, attempt + 1)
     }
 
-  private def healthRoutes(
-    xa: doobie.Transactor[IO]
-  ): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  private def healthRoutes(xa: doobie.Transactor[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "healthz" =>
       sql"select 1".query[Int].unique.transact(xa).timeout(3.seconds).attempt.flatMap {
         case Right(_) => IO.pure(TextResponse(Status.Ok, "ok"))
@@ -173,12 +167,8 @@ object Main extends IOApp.Simple {
   }
 
   /** DB から定期的に読むメトリクス（skorimako のダッシュボード・アラート用）. */
-  private def gauges(
-    xa: doobie.Transactor[IO]
-  ): Resource[IO, Unit] = {
-    def q(
-      sqlText: doobie.Fragment
-    ): IO[Long] = sqlText.query[Long].unique.transact(xa)
+  private def gauges(xa: doobie.Transactor[IO]): Resource[IO, Unit] = {
+    def q(sqlText: doobie.Fragment): IO[Long] = sqlText.query[Long].unique.transact(xa)
     List(
       Metrics.gauge("skakapo.users.total", "有効なユーザーの数")(q(sql"select count(*) from app_user where not disabled")),
       Metrics.gauge(
@@ -211,20 +201,16 @@ object Main extends IOApp.Simple {
   }
 
   /** 期限の切れたセッション・連携の途中の状態・会話に使われなかった画像・7日使っていない作業場所を消す（1時間ごと）. */
-  private def purgeLoop(
-    users: UserStore,
-    conns: ConnectionStore,
-    sessions: SessionStore,
-    workBase: java.nio.file.Path
-  ): IO[Unit] =
+  private def purgeLoop(users: UserStore,
+                        conns: ConnectionStore,
+                        sessions: SessionStore,
+                        workBase: java.nio.file.Path): IO[Unit] =
     Periodic.run(1.minute, 1.hour, ErrorCode.PurgeFailed)(
       IO.realTimeInstant.flatMap(users.purgeExpired) *> conns.purge *> sessions.purgeAttachments *>
         purgeWorkspaces(workBase)
     ).void
 
-  private def purgeWorkspaces(
-    base: java.nio.file.Path
-  ): IO[Unit] = IO.blocking {
+  private def purgeWorkspaces(base: java.nio.file.Path): IO[Unit] = IO.blocking {
     val dir = base.resolve("sessions")
     if java.nio.file.Files.isDirectory(dir) then {
       val old = java.time.Instant.now().minus(java.time.Duration.ofDays(7))
@@ -240,11 +226,7 @@ object Main extends IOApp.Simple {
    * 画像はアイコン（IdP の画像は外部の https）のため広めにする. ヘッダーのロゴは IdP（sruru）が配るので、
    * http の開発環境でも出るよう IdP のオリジンも足す. Service Worker・manifest は自分のサイトなので default-src で足りる.
    */
-  def spaCsp(
-    indexHtml: String,
-    rum: Option[String] = RumRoutes.origin,
-    idp: Option[String] = None
-  ): String = {
+  def spaCsp(indexHtml: String, rum: Option[String] = RumRoutes.origin, idp: Option[String] = None): String = {
     val inline = "(?s)<script>(.*?)</script>".r.findAllMatchIn(indexHtml).map(m =>
       s"'sha256-${java.util.Base64.getEncoder.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(m.group(1).getBytes("UTF-8")))}'"
     )
@@ -263,23 +245,14 @@ object Main extends IOApp.Simple {
 
   /** ビルド済みの画面の配信. 存在しないパスは index.html（SPA）. */
   /** IdP の issuer の URL のオリジン（例: http://localhost:8081）. */
-  def idpOrigin(
-    issuer: String
-  ): Option[String] = scala.util.Try(java.net.URI.create(issuer)).toOption
+  def idpOrigin(issuer: String): Option[String] = scala.util.Try(java.net.URI.create(issuer)).toOption
     .filter(u => u.getScheme != null && u.getHost != null)
     .map(u => s"${u.getScheme}://${u.getHost}" + (if u.getPort >= 0 then s":${u.getPort}" else ""))
 
-  private def spa(
-    dir: String,
-    idp: Option[String]
-  ): IO[HttpRoutes[IO]] =
+  private def spa(dir: String, idp: Option[String]): IO[HttpRoutes[IO]] =
     IO.blocking(java.nio.file.Files.readString(java.nio.file.Path.of(dir, "index.html"))).map(spaRoutes(dir, _, idp))
 
-  private def spaRoutes(
-    dir: String,
-    indexHtml: String,
-    idp: Option[String]
-  ): HttpRoutes[IO] = {
+  private def spaRoutes(dir: String, indexHtml: String, idp: Option[String]): HttpRoutes[IO] = {
     val csp = spaCsp(indexHtml, idp = idp)
     val files = fileService[IO](FileService.Config(dir))
     val index = HttpRoutes.of[IO] {

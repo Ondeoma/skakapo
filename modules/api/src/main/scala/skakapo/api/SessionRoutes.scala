@@ -18,12 +18,11 @@ import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 /** 会話: 依頼の種類（フォーム）・会話を始める・返事・出来事の取得（長いポーリング）・止める. */
-final class SessionRoutes(
-  store: SessionStore,
-  config: ConfigStore,
-  val sessions: SessionAuth,
-  workBase: Path,
-  credits: skakapo.agent.Credits)
+final class SessionRoutes(store: SessionStore,
+                          config: ConfigStore,
+                          val sessions: SessionAuth,
+                          workBase: Path,
+                          credits: skakapo.agent.Credits)
   extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -44,32 +43,20 @@ final class SessionRoutes(
     case req @ DELETE -> Root / "api" / "sessions" / UuidVar(id) => deleteSession(req, id)
   }
 
-  private def getRequestTypes(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getRequestTypes(req: Request[IO]): IO[Response[IO]] =
     authed(req)(_ => config.requestTypes(enabledOnly = true).flatMap(Ok(_)))
 
-  private def getRepositories(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getRepositories(req: Request[IO]): IO[Response[IO]] =
     authed(req)(_ => config.repositories(enabledOnly = true).flatMap(rs => Ok(rs.map(_.copy(notes = "")))))
 
-  private def getSessions(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getSessions(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u =>
-      (store.list(u.id, param(req, "archived").contains("true")), labels).flatMapN(
-        (
-          ss,
-          ls
-        ) =>
-          Ok(ss.map(s => s.dto(ls.getOrElse(s.requestType, s.requestType))))
+      (store.list(u.id, param(req, "archived").contains("true")), labels).flatMapN((ss, ls) =>
+        Ok(ss.map(s => s.dto(ls.getOrElse(s.requestType, s.requestType))))
       )
     )
 
-  private def postSessions(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postSessions(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u =>
       withCredit(u)(body[StartReq](req) { r =>
         config.requestType(r.requestType).flatMap {
@@ -90,13 +77,9 @@ final class SessionRoutes(
                     first,
                     Jsons.encodeTranscript(List(userMessage(atts, first))),
                     atts.map(_._1)
-                  ).flatMap(
-                    (
-                      s,
-                      _
-                    ) =>
-                      sbirds.observe.Metrics.count("skakapo.sessions.created", "request_type" -> t.key) *>
-                        Created(s.dto(t.label))
+                  ).flatMap((s, _) =>
+                    sbirds.observe.Metrics.count("skakapo.sessions.created", "request_type" -> t.key) *>
+                      Created(s.dto(t.label))
                   )
                 }
               })
@@ -105,24 +88,16 @@ final class SessionRoutes(
       })
     )
 
-  private def getSession(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getSession(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u => owned(u, id)(s => snapshot(s, 0L).flatMap(Ok(_))))
 
-  private def getSessionEvents(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getSessionEvents(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       owned(u, id) { s =>
         val after = param(req, "after").flatMap(_.toLongOption).getOrElse(0L)
         val wait = param(req, "wait").flatMap(_.toIntOption).getOrElse(0).max(0).min(25)
         // 待つ間は、新しい出来事と状態だけを見る（DB への問い合わせを減らす）. 変わったら全体を返す
-        def poll(
-          left: Int
-        ): IO[Unit] =
+        def poll(left: Int): IO[Unit] =
           store.pollState(s.id, after).flatMap {
             case Some((st, fresh)) if !fresh && left > 0 && st == s.status => IO.sleep(1.second) *> poll(left - 1)
             case _ => IO.unit
@@ -131,10 +106,7 @@ final class SessionRoutes(
       }
     )
 
-  private def postSessionMessages(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postSessionMessages(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       withCredit(u)(owned(u, id)(s =>
         body[MessageReq](req) { r =>
@@ -159,23 +131,15 @@ final class SessionRoutes(
       ))
     )
 
-  private def getMeCredit(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getMeCredit(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u => credits.of(u.id).flatMap(Ok(_)))
 
-  private def postSessionCancel(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postSessionCancel(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       owned(u, id)(s => store.cancel(s.id).ifM(Accepted(Json.obj()), err(ErrorCode.NothingRunning)))
     )
 
-  private def patchSession(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchSession(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       owned(u, id)(s =>
         body[Json](req) { j =>
@@ -191,9 +155,7 @@ final class SessionRoutes(
       )
     )
 
-  private def postAttachments(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAttachments(req: Request[IO]): IO[Response[IO]] =
     authed(req) { u =>
       // 種類が分からない・おかしいときは application/octet-stream として預かる
       val ct = req.contentType.map(c => s"${c.mediaType.mainType}/${c.mediaType.subType}".toLowerCase)
@@ -211,10 +173,7 @@ final class SessionRoutes(
       }
     }
 
-  private def getAttachment(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getAttachment(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       store.attachment(id, u.id).flatMap {
         case None => err(ErrorCode.FileNotFound)
@@ -235,24 +194,17 @@ final class SessionRoutes(
       }
     )
 
-  private def getMeContext(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getMeContext(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u => config.userContext(u.id).flatMap(t => Ok(UserContextDto(t))))
 
-  private def putMeContext(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def putMeContext(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u =>
       body[UserContextDto](req)(r =>
         valid(Check.text(r.text, "前提", 20000))(t => config.saveUserContext(u.id, t) *> Ok(UserContextDto(t)))
       )
     )
 
-  private def deleteSession(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteSession(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req)(u =>
       owned(u, id) { s =>
         store.cancel(s.id) *> store.delete(s.id, u.id) *> Workspace.forSession(workBase, s.id).remove.attempt *>
@@ -264,11 +216,7 @@ final class SessionRoutes(
   private val MaxActiveRuns = 3
 
   /** 今月のクレジットが残っていなければ 402、同時の実行が多すぎれば 429（依頼を始める・返事をする前に）. */
-  private def withCredit(
-    u: User
-  )(
-    f: => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def withCredit(u: User)(f: => IO[Response[IO]]): IO[Response[IO]] =
     credits.of(u.id).map(_.blocked).flatMap {
       case Some(msg) => err(ErrorCode.CreditExhausted, msg)
       case None => store.activeRuns(u.id).flatMap(n =>
@@ -280,27 +228,16 @@ final class SessionRoutes(
 
   private def labels: IO[Map[String, String]] = config.requestTypes().map(_.map(t => t.key -> t.label).toMap)
 
-  private def owned(
-    u: User,
-    id: UUID
-  )(
-    f: AgentSession => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def owned(u: User, id: UUID)(f: AgentSession => IO[Response[IO]]): IO[Response[IO]] =
     store.find(id).flatMap {
       case Some(s) if s.userId == u.id => f(s)
       case _ => err(ErrorCode.SessionNotFound)
     }
 
   /** フォームの service・repository の項目は、有効なサービス・登録したリポジトリから選んだものだけ. */
-  private def checkRefs(
-    rt: RequestTypeDto,
-    values: Map[String, String]
-  ): IO[Either[String, Unit]] =
+  private def checkRefs(rt: RequestTypeDto, values: Map[String, String]): IO[Either[String, Unit]] =
     config.enabledRefs.map {
-      (
-        ss,
-        rs
-      ) =>
+      (ss, rs) =>
         rt.fields.collectFirst {
           case f if f.kind == FieldKind.Service && values.get(f.name).exists(v => !ss.contains(v)) =>
             s"「${f.label}」は一覧から選んでください"
@@ -310,10 +247,7 @@ final class SessionRoutes(
     }
 
   /** 会話の様子. after が 0 なら最新の500件（長い会話でも新しいものを出す）. */
-  private def snapshot(
-    s: AgentSession,
-    after: Long
-  ): IO[EventsDto] =
+  private def snapshot(s: AgentSession, after: Long): IO[EventsDto] =
     (
       config.requestType(s.requestType),
       if after <= 0 then store.latestEvents(s.id) else store.events(s.id, after),
@@ -321,12 +255,7 @@ final class SessionRoutes(
       if after <= 0 then IO.pure(Some(s)) else store.find(s.id)
     )
       .flatMapN {
-        (
-          rt,
-          es,
-          run,
-          cur
-        ) =>
+        (rt, es, run, cur) =>
           {
             val x = cur.getOrElse(s)
             // 使用量は、開いたときと新しい出来事があったときだけ集計する（長いポーリングのたびに数えない）
@@ -339,10 +268,7 @@ final class SessionRoutes(
   private def withAttachments(
     u: User,
     ids: List[UUID],
-    used: Long
-  )(
-    f: List[(AttachmentDto, Array[Byte])] => IO[Response[IO]]
-  ): IO[Response[IO]] = {
+    used: Long)(f: List[(AttachmentDto, Array[Byte])] => IO[Response[IO]]): IO[Response[IO]] = {
     val distinct = ids.distinct
     if distinct.size > AttachmentRule.MaxCount then
       err(ErrorCode.TooManyAttachments, s"添付は1回に ${AttachmentRule.MaxCount} 個までです")
@@ -356,10 +282,7 @@ final class SessionRoutes(
   }
 
   /** 利用者の発言（添付は文より前に置く. Claude は添付のあとの指示をよく読む）. */
-  private def userMessage(
-    atts: List[(AttachmentDto, Array[Byte])],
-    text: String
-  ): MessageParam =
+  private def userMessage(atts: List[(AttachmentDto, Array[Byte])], text: String): MessageParam =
     if atts.isEmpty then MessageParam.ofUser(text)
     else
       MessageParam.ofUserOfContentBlockParams((AttachmentBlocks(atts) :+

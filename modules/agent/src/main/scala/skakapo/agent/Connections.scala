@@ -22,13 +22,12 @@ import scala.concurrent.duration.*
  * OAuth に対応していないサービスは、利用者が発行した API トークンを貼り付けてもらう.
  * 連携したときに、そのサービスの MCP のツールの一覧を読んで覚える（システムとして「何ができるか」を把握する）.
  */
-final class Connections(
-  config: ConfigStore,
-  store: ConnectionStore,
-  box: Option[SecretBox],
-  http: Client[IO],
-  mcp: Mcp,
-  publicUrl: String) {
+final class Connections(config: ConfigStore,
+                        store: ConnectionStore,
+                        box: Option[SecretBox],
+                        http: Client[IO],
+                        mcp: Mcp,
+                        publicUrl: String) {
 
   val callbackUrl: String = s"${publicUrl.stripSuffix("/")}/api/connections/callback"
 
@@ -38,37 +37,25 @@ final class Connections(
    * 利用者のトークン（復号したもの）. 期限が切れている（1分以内に切れる）なら、refresh token で更新する.
    * 更新できなければ None（連携し直してもらう）.
    */
-  def token(
-    userId: UUID,
-    serviceId: UUID
-  ): IO[Option[String]] = store.find(userId, serviceId).flatMap(_.flatTraverse(tokenOf))
+  def token(userId: UUID, serviceId: UUID): IO[Option[String]] =
+    store.find(userId, serviceId).flatMap(_.flatTraverse(tokenOf))
 
   /** 利用者の連携をまとめて（サービス → トークン. 期限が切れて更新できなければ None）. */
-  def tokens(
-    userId: UUID
-  ): IO[Map[UUID, Option[String]]] =
+  def tokens(userId: UUID): IO[Map[UUID, Option[String]]] =
     store.list(userId).flatMap(_.parTraverseN(4)(c => tokenOf(c).map(c.serviceId -> _))).map(_.toMap)
 
   /** エージェント専用アカウントのトークン（復号したもの. 有効なサービスだけ）. */
-  def agentTokens: IO[Map[UUID, String]] = config.agentTokens.map(_.flatMap(
-    (
-      id,
-      enc
-    ) => box.flatMap(_.decrypt(enc)).map(id -> _)
-  ))
+  def agentTokens: IO[Map[UUID, String]] =
+    config.agentTokens.map(_.flatMap((id, enc) => box.flatMap(_.decrypt(enc)).map(id -> _)))
 
   /** ツールの一覧を覚えておくときの、エージェント専用アカウントの鍵（利用者の ID の代わり）. */
   val AgentKey: UUID = NilId.value
 
-  private def tokenOf(
-    c: Connection
-  ): IO[Option[String]] =
+  private def tokenOf(c: Connection): IO[Option[String]] =
     if c.expiresAt.forall(_.isAfter(Instant.now().plusSeconds(60))) then IO.pure(box.flatMap(_.decrypt(c.token)))
     else refresh(c)
 
-  private def refresh(
-    c: Connection
-  ): IO[Option[String]] =
+  private def refresh(c: Connection): IO[Option[String]] =
     (box, box.flatMap(b => Option(c.refresh).filter(_.nonEmpty).flatMap(b.decrypt))) match {
       case (Some(b), Some(rt)) =>
         (config.service(c.serviceId), config.serviceSecret(c.serviceId)).flatMapN {
@@ -101,11 +88,7 @@ final class Connections(
   // ---------------------------------------------------------------- OAuth
 
   /** 連携を始める. IdP（各サービス）の許可の画面の URL を返す. */
-  def start(
-    userId: UUID,
-    s: ServiceDto,
-    returnTo: String
-  ): IO[Either[String, Uri]] =
+  def start(userId: UUID, s: ServiceDto, returnTo: String): IO[Either[String, Uri]] =
     if !s.enabled then IO.pure(Left("このサービスは無効です"))
     else if !s.oauth.usable then IO.pure(Left("このサービスは OAuth の設定がありません（管理者に連絡するか、API トークンで連携してください）"))
     else {
@@ -126,11 +109,7 @@ final class Connections(
     }
 
   /** 各サービスから戻ってきたところ. 認可コードをトークンに換えて保存する. (サービス, 戻る先). */
-  def finish(
-    state: String,
-    code: String,
-    userId: UUID
-  ): IO[Either[String, (ServiceDto, String)]] =
+  def finish(state: String, code: String, userId: UUID): IO[Either[String, (ServiceDto, String)]] =
     store.takeState(state).flatMap {
       case None => IO.pure(Left("連携の有効期限が切れました。もう一度連携してください"))
       case Some((uid, _, _, _)) if uid != userId => IO.pure(Left("連携を始めた人と違います。もう一度連携してください"))
@@ -174,8 +153,7 @@ final class Connections(
   private def tokenRequest(
     s: ServiceDto,
     secret: String,
-    grant: List[(String, String)]
-  ): IO[Either[String, (String, Option[String], String, Option[Instant])]] = {
+    grant: List[(String, String)]): IO[Either[String, (String, Option[String], String, Option[Instant])]] = {
     val github = s.kind == ServiceKind.Github
     // sBirds シリーズはクライアントの認証を Basic で受ける. GitHub は本文の client_secret
     val form = UrlForm((grant ++ List("client_id" -> s.oauth.clientId) ++
@@ -192,11 +170,7 @@ final class Connections(
   // ---------------------------------------------------------------- 貼り付けたトークン
 
   /** 利用者が発行した API トークンで連携する（MCP があれば、ツールの一覧を読めるかで確かめる）. */
-  def saveManual(
-    userId: UUID,
-    s: ServiceDto,
-    token: String
-  ): IO[Either[String, Unit]] = {
+  def saveManual(userId: UUID, s: ServiceDto, token: String): IO[Either[String, Unit]] = {
     val t = token.trim
     if !s.manualToken then IO.pure(Left("このサービスは API トークンでは連携できません"))
     else if t.isEmpty || t.length > 4000 || t.exists(_.isWhitespace) then IO.pure(Left("トークンを正しく貼り付けてください"))
@@ -211,47 +185,31 @@ final class Connections(
       }
   }
 
-  def disconnect(
-    userId: UUID,
-    serviceId: UUID
-  ): IO[Boolean] = store.delete(userId, serviceId).map(_.isDefined).flatTap(_ => forget(userId, serviceId))
+  def disconnect(userId: UUID, serviceId: UUID): IO[Boolean] =
+    store.delete(userId, serviceId).map(_.isDefined).flatTap(_ => forget(userId, serviceId))
 
   /** サービスの送り先が変わったときに、全員の連携を外す（利用者のトークンを新しい送り先へ送らない）. */
-  def disconnectAll(
-    serviceId: UUID
-  ): IO[Unit] = store.deleteForService(serviceId) *> forgetService(serviceId)
+  def disconnectAll(serviceId: UUID): IO[Unit] = store.deleteForService(serviceId) *> forgetService(serviceId)
 
   /** サービスのツールの一覧を、全員分（専用アカウントの分も）忘れる. */
-  def forgetService(
-    serviceId: UUID
-  ): IO[Unit] = cache.forget(_._2 == serviceId)
+  def forgetService(serviceId: UUID): IO[Unit] = cache.forget(_._2 == serviceId)
 
   // ---------------------------------------------------------------- ツール
 
   /** MCP のツールの一覧（MCP がなければ空）. */
-  private def list(
-    s: ServiceDto,
-    token: String
-  ): IO[List[McpTool]] = if s.mcpUrl.isEmpty then IO.pure(Nil) else mcp.listTools(s.mcpUrl, token)
+  private def list(s: ServiceDto, token: String): IO[List[McpTool]] =
+    if s.mcpUrl.isEmpty then IO.pure(Nil) else mcp.listTools(s.mcpUrl, token)
 
-  private def mcpErr(
-    e: Throwable
-  ): String = e match {
+  private def mcpErr(e: Throwable): String = e match {
     case e: McpError => e.message
     case e => s"接続できませんでした（${e.getClass.getSimpleName}）"
   }
 
   /** トークンでツールの一覧を読めるか（保存する前の確かめ. 覚えはしない）. */
-  def probe(
-    s: ServiceDto,
-    token: String
-  ): IO[Either[String, Int]] = list(s, token).attempt.map(_.bimap(mcpErr, _.size))
+  def probe(s: ServiceDto, token: String): IO[Either[String, Int]] = list(s, token).attempt.map(_.bimap(mcpErr, _.size))
 
   /** ツールの一覧を読んで、システムとして覚える（サービスとして何ができるか）. */
-  def learnTools(
-    s: ServiceDto,
-    token: String
-  ): IO[List[McpTool]] =
+  def learnTools(s: ServiceDto, token: String): IO[List[McpTool]] =
     list(s, token).flatTap(ts =>
       IO.whenA(s.mcpUrl.nonEmpty)(config.replaceTools(s.id, ts.map(t => t.info -> t.schema)))
     )
@@ -260,21 +218,11 @@ final class Connections(
   private val cache = new TokenCache[(UUID, UUID), List[McpTool]](margin = Duration.Zero)
 
   /** 実行のときは読むだけ（システムとして覚えるツールは、連携したとき・読み直したときに書く. 利用者ごとの権限の違いで入れ替えない）. */
-  def tools(
-    userId: UUID,
-    s: ServiceDto,
-    token: String
-  ): IO[List[McpTool]] =
+  def tools(userId: UUID, s: ServiceDto, token: String): IO[List[McpTool]] =
     // 読めなければ例外のまま返す（覚えない）. 読めたら5分覚える
-    cache.get(userId -> s.id)((list(s, token), IO.realTime).mapN(
-      (
-        ts,
-        now
-      ) => Right(ts -> (now + 5.minutes).toMillis)
+    cache.get(userId -> s.id)((list(s, token), IO.realTime).mapN((ts, now) =>
+      Right(ts -> (now + 5.minutes).toMillis)
     )).map(_.getOrElse(Nil))
 
-  def forget(
-    userId: UUID,
-    serviceId: UUID
-  ): IO[Unit] = cache.forget(_ == (userId -> serviceId))
+  def forget(userId: UUID, serviceId: UUID): IO[Unit] = cache.forget(_ == (userId -> serviceId))
 }

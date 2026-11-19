@@ -15,25 +15,16 @@ import java.time.Instant
 import java.util.UUID
 
 /** 管理画面の設定（全体の設定・連携するサービスとそのツール・リポジトリ・依頼の種類）. */
-final class ConfigStore(
-  xa: Transactor[IO]) extends TxStore(xa) {
+final class ConfigStore(xa: Transactor[IO]) extends TxStore(xa) {
 
   // ---------------------------------------------------------------- 全体の設定（key ごとの JSON）
 
-  def setting[A: Decoder](
-    key: String,
-    default: A
-  ): IO[A] = tx(
-    sql"select value from setting where key = $key".query[Json].option.map(_.flatMap(
+  def setting[A: Decoder](key: String, default: A): IO[A] =
+    tx(sql"select value from setting where key = $key".query[Json].option.map(_.flatMap(
       _.as[A].toOption
-    ).getOrElse(default))
-  )
+    ).getOrElse(default)))
 
-  def saveSetting[A: Encoder](
-    key: String,
-    value: A,
-    by: UUID
-  ): IO[Unit] = tx(
+  def saveSetting[A: Encoder](key: String, value: A, by: UUID): IO[Unit] = tx(
     sql"""insert into setting (key, value, updated_by) values ($key, ${value.asJson}, $by)
           on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()""".update.run.void
   )
@@ -51,15 +42,10 @@ final class ConfigStore(
 
   // ---------------------------------------------------------------- 利用者が登録する前提
 
-  def userContext(
-    userId: UUID
-  ): IO[String] =
+  def userContext(userId: UUID): IO[String] =
     tx(sql"select text from user_context where user_id = $userId".query[String].option.map(_.getOrElse("")))
 
-  def saveUserContext(
-    userId: UUID,
-    text: String
-  ): IO[Unit] = tx(
+  def saveUserContext(userId: UUID, text: String): IO[Unit] = tx(
     sql"""insert into user_context (user_id, text) values ($userId, $text)
           on conflict (user_id) do update set text = excluded.text, updated_at = now()""".update.run.void
   )
@@ -88,9 +74,7 @@ final class ConfigStore(
     String
   )
 
-  private def serviceDto(
-    r: ServiceRow
-  ): ServiceDto =
+  private def serviceDto(r: ServiceRow): ServiceDto =
     ServiceDto(
       r._1,
       r._2,
@@ -110,56 +94,39 @@ final class ConfigStore(
     )
 
   /** サービスに、覚えているツールを付ける. */
-  private def withTools(
-    ss: List[ServiceDto]
-  ): ConnectionIO[List[ServiceDto]] =
+  private def withTools(ss: List[ServiceDto]): ConnectionIO[List[ServiceDto]] =
     toolsC(ss.map(_.id)).map(ts =>
       ss.map(s =>
-        ts.get(s.id).fold(s)(
-          (
-            at,
-            tools
-          ) => s.copy(tools = tools, toolsUpdatedAt = Some(at.toString))
-        )
+        ts.get(s.id).fold(s)((at, tools) => s.copy(tools = tools, toolsUpdatedAt = Some(at.toString)))
       )
     )
 
   /** サービスの一覧（覚えているツールも付ける）. enabledOnly なら有効なものだけ. */
-  def services(
-    enabledOnly: Boolean = false
-  ): IO[List[ServiceDto]] = tx(
-    (fr"select" ++ serviceCols ++ fr"from service s" ++ (if enabledOnly then fr"where s.enabled" else Fragment.empty) ++
-      fr"order by s.position, s.name").query[ServiceRow].to[List].map(_.map(serviceDto)).flatMap(withTools)
-  )
+  def services(enabledOnly: Boolean = false): IO[List[ServiceDto]] = tx((fr"select" ++ serviceCols ++
+    fr"from service s" ++ (if enabledOnly then fr"where s.enabled" else Fragment.empty) ++
+    fr"order by s.position, s.name").query[ServiceRow].to[List].map(_.map(serviceDto)).flatMap(withTools))
 
-  def service(
-    id: UUID
-  ): IO[Option[ServiceDto]] = tx(
-    (fr"select" ++ serviceCols ++ fr"from service s where s.id = $id").query[ServiceRow].option.map(_.map(
+  def service(id: UUID): IO[Option[ServiceDto]] =
+    tx((fr"select" ++ serviceCols ++ fr"from service s where s.id = $id").query[ServiceRow].option.map(_.map(
       serviceDto
-    ).toList).flatMap(withTools).map(_.headOption)
-  )
+    ).toList).flatMap(withTools).map(_.headOption))
 
   /** 暗号化した OAuth のクライアントのシークレット. */
-  def serviceSecret(
-    id: UUID
-  ): IO[Option[String]] =
+  def serviceSecret(id: UUID): IO[Option[String]] =
     tx(sql"select oauth_secret from service where id = $id".query[String].option.map(_.filter(_.nonEmpty)))
 
   /** 有効なサービスのエージェント専用アカウントのトークン（暗号化した値）. */
-  def agentTokens: IO[Map[UUID, String]] = tx(
-    sql"select id, agent_token from service where enabled and agent_token <> ''".query[(UUID, String)].to[List].map(
-      _.toMap
-    )
-  )
+  def agentTokens: IO[Map[UUID, String]] =
+    tx(sql"select id, agent_token from service where enabled and agent_token <> ''".query[(
+      UUID,
+      String
+    )].to[List].map(_.toMap))
 
   /** secret・agentToken: None は変えない、Some("") は消す、Some(暗号化した値) は置き換える. */
-  def saveService(
-    id: Option[UUID],
-    r: ServiceReq,
-    secret: Option[String],
-    agentToken: Option[String] = None
-  ): IO[Either[String, UUID]] = tx {
+  def saveService(id: Option[UUID],
+                  r: ServiceReq,
+                  secret: Option[String],
+                  agentToken: Option[String] = None): IO[Either[String, UUID]] = tx {
     val sid = id.getOrElse(UUID.randomUUID())
     val upsert = id match {
       case None =>
@@ -184,73 +151,39 @@ final class ConfigStore(
     )
   }
 
-  def deleteService(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from service where id = $id".update.run.map(_ > 0))
+  def deleteService(id: UUID): IO[Boolean] = tx(sql"delete from service where id = $id".update.run.map(_ > 0))
 
   // ---------------------------------------------------------------- サービスのツール（システムとして何ができるかを覚えておく）
 
-  private def toolsC(
-    ids: List[UUID]
-  ): ConnectionIO[Map[UUID, (Instant, List[ToolInfo])]] =
+  private def toolsC(ids: List[UUID]): ConnectionIO[Map[UUID, (Instant, List[ToolInfo])]] =
     if ids.isEmpty then Map.empty.pure[ConnectionIO]
     else
       sql"select service_id, name, description, read_only, updated_at from service_tool where service_id = any(${ids.toArray}) order by name"
         .query[(UUID, String, String, Option[Boolean], Instant)].to[List]
-        .map(_.groupBy(_._1).map(
-          (
-            id,
-            rows
-          ) => id -> (rows.map(_._5).max, rows.map(r => ToolInfo(r._2, r._3, r._4)))
-        ))
+        .map(_.groupBy(_._1).map((id, rows) => id -> (rows.map(_._5).max, rows.map(r => ToolInfo(r._2, r._3, r._4)))))
 
   /** tools/list の結果で置き換える（消えたツールは消す）. */
-  def replaceTools(
-    serviceId: UUID,
-    tools: List[(ToolInfo, Json)]
-  ): IO[Unit] = tx(
-    sql"delete from service_tool where service_id = $serviceId".update.run *>
+  def replaceTools(serviceId: UUID, tools: List[(ToolInfo, Json)]): IO[Unit] =
+    tx(sql"delete from service_tool where service_id = $serviceId".update.run *>
       Update[(UUID, String, String, Json, Option[Boolean])](
         "insert into service_tool (service_id, name, description, input_schema, read_only) values (?, ?, ?, ?, ?) on conflict do nothing"
-      )
-        .updateMany(tools.map(
-          (
-            t,
-            schema
-          ) => (serviceId, t.name, t.description, schema, t.readOnly)
-        )).void
-  )
+      ).updateMany(tools.map((t, schema) => (serviceId, t.name, t.description, schema, t.readOnly))).void)
 
   // ---------------------------------------------------------------- リポジトリ
 
   private val repoCols = fr"id, name, url, default_branch, service_key, description, notes, enabled, account_id"
 
-  def repositories(
-    enabledOnly: Boolean = false
-  ): IO[List[RepositoryDto]] = tx(
-    (fr"select" ++ repoCols ++ fr"from repository" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++
-      fr"order by name")
-      .query[RepositoryDto].to[List]
-  )
+  def repositories(enabledOnly: Boolean = false): IO[List[RepositoryDto]] =
+    tx((fr"select" ++ repoCols ++ fr"from repository" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++
+      fr"order by name").query[RepositoryDto].to[List])
 
   /** 有効なサービスのキーと、有効なリポジトリの名前（フォームの選択の確かめ. ツールまでは読まない）. */
-  def enabledRefs: IO[(Set[String], Set[String])] = tx(
-    (
-      sql"select key from service where enabled".query[String].to[List],
-      sql"select name from repository where enabled".query[String].to[List]
-    )
-      .mapN(
-        (
-          a,
-          b
-        ) => (a.toSet, b.toSet)
-      )
-  )
+  def enabledRefs: IO[(Set[String], Set[String])] = tx((
+    sql"select key from service where enabled".query[String].to[List],
+    sql"select name from repository where enabled".query[String].to[List]
+  ).mapN((a, b) => (a.toSet, b.toSet)))
 
-  def saveRepository(
-    id: Option[UUID],
-    r: RepositoryReq
-  ): IO[Either[String, RepositoryDto]] = tx {
+  def saveRepository(id: Option[UUID], r: RepositoryReq): IO[Either[String, RepositoryDto]] = tx {
     val rid = id.getOrElse(UUID.randomUUID())
     val q = id match {
       case None =>
@@ -267,9 +200,7 @@ final class ConfigStore(
     q.map(_.toRight(s"名前「${r.name}」のリポジトリがすでにあるか、見つかりません"))
   }
 
-  def deleteRepository(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from repository where id = $id".update.run.map(_ > 0))
+  def deleteRepository(id: UUID): IO[Boolean] = tx(sql"delete from repository where id = $id".update.run.map(_ > 0))
 
   // ---------------------------------------------------------------- Git の共有アカウント（トークンは暗号化した値）
 
@@ -280,50 +211,40 @@ final class ConfigStore(
     tx((fr"select" ++ accountCols ++ fr"from git_account order by name").query[GitAccountDto].to[List])
 
   /** 暗号化したトークンも返す（実行のときだけ使う）. */
-  def gitAccountWithToken(
-    id: UUID
-  ): IO[Option[(GitAccountDto, String)]] = tx(
-    (fr"select" ++ accountCols ++ fr", token from git_account where id = $id").query[(GitAccountDto, String)].option
-  )
+  def gitAccountWithToken(id: UUID): IO[Option[(GitAccountDto, String)]] =
+    tx((fr"select" ++ accountCols ++ fr", token from git_account where id = $id").query[(GitAccountDto, String)].option)
 
   /** token: None は変えない（新しく作るときは必須）. */
-  def saveGitAccount(
-    id: Option[UUID],
-    r: GitAccountReq,
-    token: Option[String]
-  ): IO[Either[String, GitAccountDto]] = tx {
-    val aid = id.getOrElse(UUID.randomUUID())
-    val q = id match {
-      case None =>
-        (fr"""insert into git_account (id, name, provider, api_url, username, token, author_name, author_email, auth_kind, app_id, installation_id)
+  def saveGitAccount(id: Option[UUID], r: GitAccountReq, token: Option[String]): IO[Either[String, GitAccountDto]] =
+    tx {
+      val aid = id.getOrElse(UUID.randomUUID())
+      val q = id match {
+        case None =>
+          (fr"""insert into git_account (id, name, provider, api_url, username, token, author_name, author_email, auth_kind, app_id, installation_id)
               values ($aid, ${r.name}, ${r.provider}, ${r.apiUrl}, ${r.username}, ${token.getOrElse(
-            ""
-          )}, ${r.authorName}, ${r.authorEmail},
+              ""
+            )}, ${r.authorName}, ${r.authorEmail},
                       ${r.authKind}, ${r.appId}, ${r.installationId})
               on conflict (name) do nothing returning""" ++ accountCols).query[GitAccountDto].option
-      case Some(_) =>
-        (fr"""update git_account set name = ${r.name}, provider = ${r.provider}, api_url = ${r.apiUrl}, username = ${r.username},
+        case Some(_) =>
+          (fr"""update git_account set name = ${r.name}, provider = ${r.provider}, api_url = ${r.apiUrl}, username = ${r.username},
               author_name = ${r.authorName}, author_email = ${r.authorEmail}, auth_kind = ${r.authKind}, app_id = ${r.appId},
               installation_id = ${r.installationId}, updated_at = now()""" ++
-          token.fold(Fragment.empty)(t => fr", token = $t") ++
-          fr"where id = $aid and not exists (select 1 from git_account o where o.name = ${r.name} and o.id <> $aid) returning" ++
-          accountCols)
-          .query[GitAccountDto].option
+            token.fold(Fragment.empty)(t => fr", token = $t") ++
+            fr"where id = $aid and not exists (select 1 from git_account o where o.name = ${r.name} and o.id <> $aid) returning" ++
+            accountCols)
+            .query[GitAccountDto].option
+      }
+      q.map(_.toRight(s"名前「${r.name}」のアカウントがすでにあるか、見つかりません"))
     }
-    q.map(_.toRight(s"名前「${r.name}」のアカウントがすでにあるか、見つかりません"))
-  }
 
-  def deleteGitAccount(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from git_account where id = $id".update.run.map(_ > 0))
+  def deleteGitAccount(id: UUID): IO[Boolean] = tx(sql"delete from git_account where id = $id".update.run.map(_ > 0))
 
   // ---------------------------------------------------------------- クラウドの資格情報
 
   private val cloudCols = fr"id, name, provider, config, secret <> '', notes, enabled, access, access_groups"
   private type CloudRow = (UUID, String, String, Json, Boolean, String, Boolean, String, List[UUID])
-  private def cloudDto(
-    r: CloudRow
-  ): CloudCredentialDto =
+  private def cloudDto(r: CloudRow): CloudCredentialDto =
     CloudCredentialDto(
       r._1,
       r._2,
@@ -336,40 +257,27 @@ final class ConfigStore(
       groups = r._9
     )
 
-  def cloudCredentials(
-    enabledOnly: Boolean = false
-  ): IO[List[CloudCredentialDto]] = tx(
-    (fr"select" ++ cloudCols ++ fr"from cloud_credential" ++
-      (if enabledOnly then fr"where enabled" else Fragment.empty) ++ fr"order by name")
-      .query[CloudRow].to[List].map(_.map(cloudDto))
-  )
+  def cloudCredentials(enabledOnly: Boolean = false): IO[List[CloudCredentialDto]] = tx((fr"select" ++ cloudCols ++
+    fr"from cloud_credential" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++
+    fr"order by name").query[CloudRow].to[List].map(_.map(cloudDto)))
 
   /** 有効な資格情報と、暗号化した秘密（実行のときだけ使う）. */
-  def enabledCloudCredentialsWithSecret: IO[List[(CloudCredentialDto, String)]] = tx(
-    (fr"select" ++ cloudCols ++ fr", secret from cloud_credential where enabled order by name")
-      .query[(CloudRow, String)].to[List].map(_.map(
-        (
-          r,
-          s
-        ) => cloudDto(r) -> s
-      ))
-  )
+  def enabledCloudCredentialsWithSecret: IO[List[(CloudCredentialDto, String)]] = tx((fr"select" ++ cloudCols ++
+    fr", secret from cloud_credential where enabled order by name").query[(CloudRow, String)].to[List].map(_.map(
+    (r, s) => cloudDto(r) -> s
+  )))
 
-  def cloudSecret(
-    id: UUID
-  ): IO[Option[String]] = tx(sql"select secret from cloud_credential where id = $id".query[String].option)
+  def cloudSecret(id: UUID): IO[Option[String]] =
+    tx(sql"select secret from cloud_credential where id = $id".query[String].option)
 
   /** secret: None は変えない（新しく作るときは必須）. */
   /** groups のときだけ、選んだ種類を保存する. */
-  private def groupsOf(
-    r: CloudCredentialReq
-  ): List[UUID] = if r.access == CloudProvider.AccessGroups then r.groups.distinct else Nil
+  private def groupsOf(r: CloudCredentialReq): List[UUID] =
+    if r.access == CloudProvider.AccessGroups then r.groups.distinct else Nil
 
-  def saveCloudCredential(
-    id: Option[UUID],
-    r: CloudCredentialReq,
-    secret: Option[String]
-  ): IO[Either[String, CloudCredentialDto]] = tx {
+  def saveCloudCredential(id: Option[UUID],
+                          r: CloudCredentialReq,
+                          secret: Option[String]): IO[Either[String, CloudCredentialDto]] = tx {
     val cid = id.getOrElse(UUID.randomUUID())
     val q = id match {
       case None =>
@@ -388,37 +296,24 @@ final class ConfigStore(
     q.query[CloudRow].option.map(_.map(cloudDto).toRight(s"名前「${r.name}」の資格情報がすでにあるか、見つかりません"))
   }
 
-  def deleteCloudCredential(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from cloud_credential where id = $id".update.run.map(_ > 0))
+  def deleteCloudCredential(id: UUID): IO[Boolean] =
+    tx(sql"delete from cloud_credential where id = $id".update.run.map(_ > 0))
 
   // ---------------------------------------------------------------- 依頼の種類
 
   private val typeCols = fr"id, key, label, description, icon, fields, instructions, position, enabled"
   private type TypeRow = (UUID, String, String, String, String, Json, String, Int, Boolean)
-  private def typeDto(
-    r: TypeRow
-  ): RequestTypeDto =
+  private def typeDto(r: TypeRow): RequestTypeDto =
     RequestTypeDto(r._1, r._2, r._3, r._4, r._5, r._6.as[List[FormField]].getOrElse(Nil), r._7, r._8, r._9)
 
-  def requestTypes(
-    enabledOnly: Boolean = false
-  ): IO[List[RequestTypeDto]] = tx(
-    (fr"select" ++ typeCols ++ fr"from request_type" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++
-      fr"order by position, label")
-      .query[TypeRow].to[List].map(_.map(typeDto))
-  )
+  def requestTypes(enabledOnly: Boolean = false): IO[List[RequestTypeDto]] = tx((fr"select" ++ typeCols ++
+    fr"from request_type" ++ (if enabledOnly then fr"where enabled" else Fragment.empty) ++
+    fr"order by position, label").query[TypeRow].to[List].map(_.map(typeDto)))
 
-  def requestType(
-    key: String
-  ): IO[Option[RequestTypeDto]] = tx(
-    (fr"select" ++ typeCols ++ fr"from request_type where key = $key").query[TypeRow].option.map(_.map(typeDto))
-  )
+  def requestType(key: String): IO[Option[RequestTypeDto]] =
+    tx((fr"select" ++ typeCols ++ fr"from request_type where key = $key").query[TypeRow].option.map(_.map(typeDto)))
 
-  def saveRequestType(
-    id: Option[UUID],
-    r: RequestTypeReq
-  ): IO[Either[String, RequestTypeDto]] = tx {
+  def saveRequestType(id: Option[UUID], r: RequestTypeReq): IO[Either[String, RequestTypeDto]] = tx {
     val tid = id.getOrElse(UUID.randomUUID())
     val q = id match {
       case None =>
@@ -435,9 +330,7 @@ final class ConfigStore(
     q.map(_.map(typeDto).toRight(s"キー「${r.key}」の依頼の種類がすでにあるか、見つかりません"))
   }
 
-  def deleteRequestType(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from request_type where id = $id".update.run.map(_ > 0))
+  def deleteRequestType(id: UUID): IO[Boolean] = tx(sql"delete from request_type where id = $id".update.run.map(_ > 0))
 
   // ---------------------------------------------------------------- 初めての起動
 
@@ -450,10 +343,7 @@ final class ConfigStore(
     tx((fr"select" ++ groupCols ++ fr"from user_group order by position, label").query[UserGroupDto].to[List])
 
   /** 既定にしたら、ほかの既定を外す（既定は1つだけ）. */
-  def saveUserGroup(
-    id: Option[UUID],
-    r: UserGroupReq
-  ): IO[Either[String, UserGroupDto]] = tx {
+  def saveUserGroup(id: Option[UUID], r: UserGroupReq): IO[Either[String, UserGroupDto]] = tx {
     val gid = id.getOrElse(UUID.randomUUID())
     val clear = if r.isDefault then
       sql"update user_group set is_default = false where is_default and id <> $gid".update.run.void
@@ -472,9 +362,7 @@ final class ConfigStore(
     clear *> q.query[UserGroupDto].option.map(_.toRight(s"キー「${r.key}」の種類がすでにあるか、見つかりません"))
   }
 
-  def deleteUserGroup(
-    id: UUID
-  ): IO[Boolean] = tx(sql"delete from user_group where id = $id".update.run.map(_ > 0))
+  def deleteUserGroup(id: UUID): IO[Boolean] = tx(sql"delete from user_group where id = $id".update.run.map(_ > 0))
 
   def seedDefaults: IO[Unit] = tx(
     sql"select count(*) from request_type".query[Long].unique.flatMap { n =>
@@ -499,10 +387,7 @@ final class ConfigStore(
         if n > 0 then ().pure[ConnectionIO]
         else
           Defaults.services.zipWithIndex.traverse_ {
-            (
-              s,
-              i
-            ) =>
+            (s, i) =>
               {
                 val base = if s.kind == ServiceKind.Github then "https://github.com" else ""
                 sql"""insert into service (id, key, name, kind, base_url, description, oauth, manual_token, enabled, position)

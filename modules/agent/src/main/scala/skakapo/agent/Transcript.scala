@@ -8,26 +8,16 @@ object Transcript {
 
   private val Unknown = "処理の途中で止まったため、このツールの結果は分かりません。必要なら確かめ直してください。"
 
-  private def blocks(
-    m: Json
-  ): List[Json] = m.hcursor.downField("content").as[List[Json]].getOrElse(Nil)
-  private def role(
-    m: Json
-  ): Option[String] = m.hcursor.get[String]("role").toOption
-  private def toolUseIds(
-    m: Json
-  ): List[String] =
+  private def blocks(m: Json): List[Json] = m.hcursor.downField("content").as[List[Json]].getOrElse(Nil)
+  private def role(m: Json): Option[String] = m.hcursor.get[String]("role").toOption
+  private def toolUseIds(m: Json): List[String] =
     blocks(m).filter(_.hcursor.get[String]("type").contains("tool_use")).flatMap(_.hcursor.get[String]("id").toOption)
-  private def toolResultIds(
-    m: Json
-  ): Set[String] =
+  private def toolResultIds(m: Json): Set[String] =
     blocks(m).filter(
       _.hcursor.get[String]("type").contains("tool_result")
     ).flatMap(_.hcursor.get[String]("tool_use_id").toOption).toSet
 
-  private def result(
-    id: String
-  ): Json =
+  private def result(id: String): Json =
     Json.obj(
       "type" -> "tool_result".asJson,
       "tool_use_id" -> id.asJson,
@@ -39,9 +29,7 @@ object Transcript {
    * 結果のない tool_use に「結果は分からない」を補う（Claude API は、tool_use の直後の利用者の発言に、すべての結果を求める）.
    * 会話の途中（ノードの停止・途中で切れた応答のあとに利用者が返事をした）でも、全体を見て直す.
    */
-  def repair(
-    t: Json
-  ): Json = {
+  def repair(t: Json): Json = {
     val ms = t.asArray.map(_.toList).getOrElse(Nil)
     val out = List.newBuilder[Json]
     var i = 0

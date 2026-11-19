@@ -9,16 +9,10 @@ import skakapo.shared.*
 
 /** 連携しているサービス（復号したトークンと、その時点のツール）. */
 /** viaAgent: 利用者は連携しておらず、エージェント専用アカウントで使う. */
-final case class Linked(
-  service: ServiceDto,
-  token: String,
-  tools: List[McpTool],
-  viaAgent: Boolean = false)
+final case class Linked(service: ServiceDto, token: String, tools: List[McpTool], viaAgent: Boolean = false)
 
 /** ツールを実行したときの、会話の外への影響（画面の「作ったもの」に足すリンク）. */
-final case class ToolOutcome(
-  out: Out,
-  links: List[LinkDto] = Nil)
+final case class ToolOutcome(out: Out, links: List[LinkDto] = Nil)
 
 /**
  * 1回の実行で Claude に渡すツール.
@@ -27,24 +21,21 @@ final case class ToolOutcome(
  *  - record_link（作ったものを画面に残す）
  * allowWrites が false なら、参照のツールだけにする（管理者の設定）.
  */
-final class Toolset(
-  linked: List[Linked],
-  repos: List[RepositoryDto],
-  ws: Workspace,
-  creds: Map[String, RepoCreds],
-  hosts: GitHosts,
-  mcp: Mcp,
-  requester: (String, String),
-  allowWrites: Boolean,
-  onTitle: Option[String => IO[Unit]] = None,
-  linkHosts: Set[String] = Set.empty,
-  clouds: List[(CloudCredentialDto, String)] = Nil,
-  cloudClients: Option[CloudClients] = None) {
+final class Toolset(linked: List[Linked],
+                    repos: List[RepositoryDto],
+                    ws: Workspace,
+                    creds: Map[String, RepoCreds],
+                    hosts: GitHosts,
+                    mcp: Mcp,
+                    requester: (String, String),
+                    allowWrites: Boolean,
+                    onTitle: Option[String => IO[Unit]] = None,
+                    linkHosts: Set[String] = Set.empty,
+                    clouds: List[(CloudCredentialDto, String)] = Nil,
+                    cloudClients: Option[CloudClients] = None) {
 
   private val repoNames = repos.map(_.name)
-  private def repo(
-    a: ACursor
-  ): Either[String, RepositoryDto] =
+  private def repo(a: ACursor): Either[String, RepositoryDto] =
     a.get[String](
       "repository"
     ).toOption.flatMap(n => repos.find(_.name == n)).toRight(s"repository は次のどれかにしてください: ${repoNames.mkString(", ")}")
@@ -54,11 +45,7 @@ final class Toolset(
   import JsonSchema.{str, obj as schema}
   private def repoProp: Json = JsonSchema.oneOf("リポジトリの名前", repoNames)
 
-  private final case class Builtin(
-    name: String,
-    description: String,
-    input: Json,
-    write: Boolean)
+  private final case class Builtin(name: String, description: String, input: Json, write: Boolean)
 
   private val builtins: List[Builtin] =
     (if repos.isEmpty then Nil
@@ -182,71 +169,41 @@ final class Toolset(
     val bs = builtins.filter(b => allowWrites || !b.write).map(b =>
       b.name -> Tool.builder().name(b.name).description(b.description).inputSchema(Jsons.inputSchema(b.input)).build()
     )
-    val ms = mcpTools.map(
-      (
-        n,
-        l,
-        t
-      ) =>
-        n -> Tool.builder().name(n).description(s"[${l.service.name}] ${Prompt.oneLine(t.info.description, 900)}")
-          .inputSchema(Jsons.inputSchema(t.schema)).build()
+    val ms = mcpTools.map((n, l, t) =>
+      n -> Tool.builder().name(n).description(s"[${l.service.name}] ${Prompt.oneLine(t.info.description, 900)}")
+        .inputSchema(Jsons.inputSchema(t.schema)).build()
     )
     val editor =
       if repos.isEmpty then Nil else List(ToolUnion.ofTextEditor20250728(ToolTextEditor20250728.builder().build()))
-    editor ++ (bs ++ ms).sortBy(_._1).map(
-      (
-        _,
-        t
-      ) => ToolUnion.ofTool(t)
-    )
+    editor ++ (bs ++ ms).sortBy(_._1).map((_, t) => ToolUnion.ofTool(t))
   }
 
   // ---------------------------------------------------------------- 実行
 
-  private def needWrite(
-    name: String
-  ): Option[Out] =
+  private def needWrite(name: String): Option[Out] =
     Option.when(!allowWrites && builtins.exists(b => b.name == name && b.write))(Out.err("管理者の設定で、書き込みのツールは使えません"))
 
   /** 書き込みに使うリポジトリと認証（共有アカウント、なければ利用者の GitHub の連携. 短い期限のトークンは使う直前に取り直す）. */
-  private def repoWithCreds(
-    a: ACursor
-  ): IO[Either[String, (RepositoryDto, RepoCreds)]] =
+  private def repoWithCreds(a: ACursor): IO[Either[String, (RepositoryDto, RepoCreds)]] =
     repo(a).flatMap(r =>
       creds.get(r.name).map(r -> _)
         .toRight(s"${r.name} に push する認証がありません。管理者が共有アカウントを結び付けるか、利用者が画面の「連携」で GitHub と連携してください")
     )
-      .flatTraverse(
-        (
-          r,
-          c
-        ) => c.fresh.map(_.map(r -> _))
-      )
+      .flatTraverse((r, c) => c.fresh.map(_.map(r -> _)))
 
   /** 書き込みのツールの共通: 認証がそろわなければエラーを返す. */
-  private def withCreds(
-    a: ACursor
-  )(
-    f: (RepositoryDto, RepoCreds) => IO[ToolOutcome]
-  ): IO[ToolOutcome] =
+  private def withCreds(a: ACursor)(f: (RepositoryDto, RepoCreds) => IO[ToolOutcome]): IO[ToolOutcome] =
     repoWithCreds(a).flatMap(_.fold(e => IO.pure(ToolOutcome(Out.err(e))), f.tupled))
 
   /** record_link に残せるのは、登録したサービス・リポジトリのホストの URL だけ（外のサイトへ誘導させない）. */
-  private def linkAllowed(
-    u: String
-  ): Boolean = Links.host(u).exists(h => linkHosts.isEmpty || linkHosts.contains(h))
+  private def linkAllowed(u: String): Boolean = Links.host(u).exists(h => linkHosts.isEmpty || linkHosts.contains(h))
 
   /** 共有アカウントのときは、だれの依頼かをコミットとプルリクエストに残す. */
   private val requestedBy: String = s"Requested-by: ${requester._1} <${requester._2}>"
   private val viaSkakapo: String = s"\n\n---\nskakapo 経由の依頼（依頼者: ${requester._1}）"
-  private def authorOf(
-    c: RepoCreds
-  ): (String, String) = c.author.getOrElse(requester)
+  private def authorOf(c: RepoCreds): (String, String) = c.author.getOrElse(requester)
 
-  def run(
-    name: String,
-    input: Json
-  ): IO[ToolOutcome] = {
+  def run(name: String, input: Json): IO[ToolOutcome] = {
     val a = input.hcursor
     needWrite(name).map(o => IO.pure(ToolOutcome(o))).getOrElse(name match {
       case "str_replace_based_edit_tool" => ws.textEditor(a).map(ToolOutcome(_))
@@ -267,10 +224,7 @@ final class Toolset(
       case "git_diff" => IO.pure(repo(a)).flatMap(_.fold(e => IO.pure(Out.err(e)), ws.diff)).map(ToolOutcome(_))
       case "commit_and_push" =>
         withCreds(a) {
-          (
-            r,
-            c
-          ) =>
+          (r, c) =>
             {
               val msg = a.get[String]("message").getOrElse("")
               ws.commitAndPush(
@@ -288,10 +242,7 @@ final class Toolset(
           IO.pure(ToolOutcome(Out.err("branch は skakapo/ で始まるブランチ（commit_and_push で push したもの）にしてください")))
         else
           withCreds(a) {
-            (
-              r,
-              c
-            ) =>
+            (r, c) =>
               {
                 val body = a.get[String]("body").getOrElse("") + (if c.shared then viaSkakapo else "")
                 hosts.createPullRequest(
@@ -315,17 +266,13 @@ final class Toolset(
           }
       case "comment_pull_request" =>
         a.get[Int]("number").toOption.fold(IO.pure(ToolOutcome(Out.err("number を指定してください"))))(n =>
-          withCreds(a)(
-            (
+          withCreds(a)((r, c) =>
+            hosts.comment(
+              c,
               r,
-              c
-            ) =>
-              hosts.comment(
-                c,
-                r,
-                n,
-                a.get[String]("body").getOrElse("") + (if c.shared then viaSkakapo else "")
-              ).map(ToolOutcome(_))
+              n,
+              a.get[String]("body").getOrElse("") + (if c.shared then viaSkakapo else "")
+            ).map(ToolOutcome(_))
           )
         )
       case "cloud_request" =>
@@ -377,12 +324,9 @@ final class Toolset(
 }
 
 object Links {
-  def host(
-    u: String
-  ): Option[String] = scala.util.Try(java.net.URI.create(u.trim).getHost).toOption.flatMap(Option(_)).map(_.toLowerCase)
+  def host(u: String): Option[String] =
+    scala.util.Try(java.net.URI.create(u.trim).getHost).toOption.flatMap(Option(_)).map(_.toLowerCase)
 
   /** 文の中の最初の URL. */
-  def find(
-    s: String
-  ): Option[String] = "https?://[^\\s)）」]+".r.findFirstIn(s)
+  def find(s: String): Option[String] = "https?://[^\\s)）」]+".r.findFirstIn(s)
 }

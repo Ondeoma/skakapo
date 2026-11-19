@@ -19,40 +19,27 @@ import scala.concurrent.duration.*
  *  - GCP: サービスアカウントの鍵で JWT に署名し、1時間のトークンを発行して付ける（*.googleapis.com）
  *  - Azure: サービスプリンシパルの client credentials で、送り先に合うトークンを発行して付ける（management.azure.com・graph.microsoft.com など）
  */
-final class CloudClients(
-  http: Client[IO]) {
+final class CloudClients(http: Client[IO]) {
   private val MaxBody = 2L * 1024 * 1024
   private val tokens = new TokenCache[(java.util.UUID, String), String]
 
-  private def secrets(
-    enc: String
-  ): Map[String, String] = parse(enc).flatMap(_.as[Map[String, String]]).getOrElse(Map.empty)
+  private def secrets(enc: String): Map[String, String] =
+    parse(enc).flatMap(_.as[Map[String, String]]).getOrElse(Map.empty)
 
-  private def hostOf(
-    url: String
-  ): Option[(Uri, String)] =
+  private def hostOf(url: String): Option[(Uri, String)] =
     Uri.fromString(url).toOption.filter(_.scheme.contains(Uri.Scheme.https)).flatMap(u =>
       u.host.map(h => u -> h.value.toLowerCase)
     )
-      .filter(
-        (
-          u,
-          _
-        ) => u.authority.forall(_.userInfo.isEmpty)
-      )
+      .filter((u, _) => u.authority.forall(_.userInfo.isEmpty))
 
   private val awsHost = "^[a-z0-9-]+(\\.[a-z]{2}(-[a-z]+)+-\\d{1,2})?\\.amazonaws\\.com(\\.cn)?$".r
 
   /** AWS の確かめで分かったアカウント ID（ARN の 5 番目）. S3 に付ける持ち主の指定に使う. */
   val AccountId = "accountId"
-  def accountIdOf(
-    arn: String
-  ): Option[String] = arn.split(":").lift(4).filter(_.matches("^\\d{12}$"))
+  def accountIdOf(arn: String): Option[String] = arn.split(":").lift(4).filter(_.matches("^\\d{12}$"))
 
   /** Azure の送り先からトークンの scope を決める（決まらない送り先には送らない）. */
-  def azureScope(
-    host: String
-  ): Option[String] =
+  def azureScope(host: String): Option[String] =
     if host == "management.azure.com" then Some("https://management.azure.com/.default")
     else if host == "graph.microsoft.com" then Some("https://graph.microsoft.com/.default")
     else if host.endsWith(".vault.azure.net") then Some("https://vault.azure.net/.default")
@@ -71,10 +58,7 @@ final class CloudClients(
    * 送ってよい送り先か. 既定はそのクラウドの API のホスト. AWS の API Gateway（execute-api）と S3 の静的サイト（s3-website）は
    * だれでも作れるエンドポイントなので、既定では送らない（データの持ち出し先にさせない）. 管理者が allowedHosts でさらに絞れる.
    */
-  def allowed(
-    c: CloudCredentialDto,
-    host: String
-  ): Boolean = {
+  def allowed(c: CloudCredentialDto, host: String): Boolean = {
     val base = c.provider match {
       // AWS はサービスの API の形（service.amazonaws.com・service.region.amazonaws.com）だけ. bucket.s3…・xxx.execute-api.…・
       // search-xxx.es.… のように、だれでも作れる名前が前に付くホストは通さない
@@ -91,60 +75,39 @@ final class CloudClients(
     ))
   }
 
-  private def send(
-    req: Request[IO]
-  ): IO[(Status, String, String)] =
+  private def send(req: Request[IO]): IO[(Status, String, String)] =
     http.run(req).use(r =>
       HttpBody.read(r, MaxBody).map(b => (r.status, r.contentType.map(_.mediaType.toString).getOrElse(""), b))
     ).timeout(90.seconds)
 
   /** 秘密を変えた・消したときに、覚えたトークンを捨てる. */
-  def forget(
-    id: java.util.UUID
-  ): IO[Unit] = tokens.forget(_._1 == id)
+  def forget(id: java.util.UUID): IO[Unit] = tokens.forget(_._1 == id)
 
   /** トークン（と期限. ミリ秒）を発行する. */
-  private def oauth(
-    url: String,
-    form: UrlForm
-  ): IO[Either[String, (String, Long)]] =
-    (OAuthToken.request(http, url, form), IO.realTime).mapN(
-      (
-        r,
-        now
-      ) => r.map(t => t.access -> t.expiresAt(now.toMillis))
+  private def oauth(url: String, form: UrlForm): IO[Either[String, (String, Long)]] =
+    (OAuthToken.request(http, url, form), IO.realTime).mapN((r, now) =>
+      r.map(t => t.access -> t.expiresAt(now.toMillis))
     )
 
   /** GCP: サービスアカウントの鍵（JSON）で JWT に署名して、cloud-platform のトークンを発行する. */
-  private def gcpToken(
-    c: CloudCredentialDto,
-    enc: String
-  ): IO[Either[String, String]] = tokens.get(c.id -> "gcp")(gcpIssue(c, enc))
+  private def gcpToken(c: CloudCredentialDto, enc: String): IO[Either[String, String]] =
+    tokens.get(c.id -> "gcp")(gcpIssue(c, enc))
 
   /** サービスアカウントの鍵（JSON）: (client_email, private_key, トークンの入口). トークンの入口は oauth2.googleapis.com に限る. */
-  private def gcpKey(
-    enc: String
-  ): Option[(String, String, String)] = {
+  private def gcpKey(enc: String): Option[(String, String, String)] = {
     val k = parse(secrets(enc).getOrElse("serviceAccountJson", "")).getOrElse(Json.obj()).hcursor
-    (k.get[String]("client_email").toOption, k.get[String]("private_key").toOption).mapN(
+    (k.get[String]("client_email").toOption, k.get[String]("private_key").toOption).mapN((email, pem) =>
       (
         email,
-        pem
-      ) =>
-        (
-          email,
-          pem,
-          k.get[String]("token_uri").toOption.filter(_.startsWith("https://oauth2.googleapis.com/")).getOrElse(
-            "https://oauth2.googleapis.com/token"
-          )
+        pem,
+        k.get[String]("token_uri").toOption.filter(_.startsWith("https://oauth2.googleapis.com/")).getOrElse(
+          "https://oauth2.googleapis.com/token"
         )
+      )
     )
   }
 
-  private def gcpIssue(
-    c: CloudCredentialDto,
-    enc: String
-  ): IO[Either[String, (String, Long)]] = gcpKey(enc) match {
+  private def gcpIssue(c: CloudCredentialDto, enc: String): IO[Either[String, (String, Long)]] = gcpKey(enc) match {
     case Some((email, pem, tokenUri)) =>
       IO.realTime.flatMap { t =>
         AppJwt.privateKey(pem).fold(
@@ -174,17 +137,10 @@ final class CloudClients(
   }
 
   /** Azure: サービスプリンシパルの client credentials で、scope のトークンを発行する. */
-  private def azureToken(
-    c: CloudCredentialDto,
-    enc: String,
-    scope: String
-  ): IO[Either[String, String]] = tokens.get(c.id -> scope)(azureIssue(c, enc, scope))
+  private def azureToken(c: CloudCredentialDto, enc: String, scope: String): IO[Either[String, String]] =
+    tokens.get(c.id -> scope)(azureIssue(c, enc, scope))
 
-  private def azureIssue(
-    c: CloudCredentialDto,
-    enc: String,
-    scope: String
-  ): IO[Either[String, (String, Long)]] = {
+  private def azureIssue(c: CloudCredentialDto, enc: String, scope: String): IO[Either[String, (String, Long)]] = {
     val tenant = c.config.getOrElse("tenantId", "")
     if !tenant.matches("^[A-Za-z0-9.-]{1,100}$") then IO.pure(Left("テナント ID が正しくありません"))
     else
@@ -200,10 +156,7 @@ final class CloudClients(
   }
 
   /** 資格情報で認証できるか（保存する前の確かめ. 覚えたトークンは使わず、入れた秘密で発行し直す）. だれとして認証されたかを返す. */
-  def probe(
-    c: CloudCredentialDto,
-    enc: String
-  ): IO[Either[String, String]] = c.provider match {
+  def probe(c: CloudCredentialDto, enc: String): IO[Either[String, String]] = c.provider match {
     case CloudProvider.Aws =>
       // 確かめは STS に送る（管理者が送ってよいホストを絞っていても）
       request(
@@ -229,11 +182,7 @@ final class CloudClients(
   }
 
   /** API を呼ぶ. 応答の状態・種類・本文を返す（失敗の状態も、そのまま返してエージェントに読ませる）. */
-  def request(
-    c: CloudCredentialDto,
-    enc: String,
-    call: CloudCall
-  ): IO[Out] = {
+  def request(c: CloudCredentialDto, enc: String, call: CloudCall): IO[Out] = {
     val method = call.method.trim.toUpperCase
     hostOf(call.url) match {
       case None => IO.pure(Out.err("url は https:// で始まる URL にしてください"))
@@ -244,20 +193,16 @@ final class CloudClients(
         IO.pure(Out.err("method は GET・POST・PUT・PATCH・DELETE・HEAD のどれかにしてください"))
       case Some((uri, host)) =>
         val body = call.body.getBytes(StandardCharsets.UTF_8)
-        val userHeaders = call.headers.filterNot(
-          (
-            k,
-            _
-          ) =>
-            Set(
-              "authorization",
-              "host",
-              "x-amz-date",
-              "x-amz-security-token",
-              "x-amz-content-sha256",
-              "x-amz-expected-bucket-owner",
-              "content-length"
-            ).contains(k.toLowerCase)
+        val userHeaders = call.headers.filterNot((k, _) =>
+          Set(
+            "authorization",
+            "host",
+            "x-amz-date",
+            "x-amz-security-token",
+            "x-amz-content-sha256",
+            "x-amz-expected-bucket-owner",
+            "content-length"
+          ).contains(k.toLowerCase)
         )
         val auth: IO[Either[String, Map[String, String]]] = c.provider match {
           case CloudProvider.Aws =>
@@ -298,24 +243,14 @@ final class CloudClients(
         auth.flatMap {
           case Left(e) => IO.pure(Out.err(e))
           case Right(h) =>
-            val hs = (userHeaders ++ h).toList.map(
-              (
-                k,
-                v
-              ) => Header.Raw(CIString(k), v): Header.ToRaw
-            )
+            val hs = (userHeaders ++ h).toList.map((k, v) => Header.Raw(CIString(k), v): Header.ToRaw)
             val req = Request[IO](Method.fromString(method).getOrElse(Method.GET), uri).putHeaders(hs*)
             val withBody = if body.isEmpty then req else req.withEntity(body).putHeaders(hs*)
-            send(withBody).map(
-              (
-                st,
-                ct,
-                text
-              ) =>
-                Out(
-                  s"HTTP ${st.code} ${st.reason}${if ct.nonEmpty then s" ($ct)" else ""}\n\n$text",
-                  isError = !st.isSuccess
-                )
+            send(withBody).map((st, ct, text) =>
+              Out(
+                s"HTTP ${st.code} ${st.reason}${if ct.nonEmpty then s" ($ct)" else ""}\n\n$text",
+                isError = !st.isSuccess
+              )
             )
               .handleError(e =>
                 Out.err(s"呼び出しに失敗しました（${e.getClass.getSimpleName}: ${skakapo.core.Text.errMsg(e, 200)}）")

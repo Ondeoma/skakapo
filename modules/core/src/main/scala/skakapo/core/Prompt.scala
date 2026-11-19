@@ -3,18 +3,14 @@ package skakapo.core
 import skakapo.shared.*
 
 /** 利用者（エージェントに伝える分だけ）. */
-final case class Who(
-  name: String,
-  email: Option[String],
-  timezone: String)
+final case class Who(name: String, email: Option[String], timezone: String)
 
 /** 会話の前提をまとめたもの. 何も変わらなければ同じ文字列になる（Claude のプロンプトのキャッシュが効くように、時刻などは入れない）. */
-final case class Knowledge(
-  agent: AgentSettings,
-  trackers: List[TrackerSettings],
-  services: List[(ServiceDto, List[ToolInfo])],
-  repos: List[RepositoryDto],
-  clouds: List[CloudCredentialDto] = Nil)
+final case class Knowledge(agent: AgentSettings,
+                           trackers: List[TrackerSettings],
+                           services: List[(ServiceDto, List[ToolInfo])],
+                           repos: List[RepositoryDto],
+                           clouds: List[CloudCredentialDto] = Nil)
 
 /**
  * システムプロンプトを組み立てる.
@@ -23,9 +19,7 @@ final case class Knowledge(
  */
 object Prompt {
 
-  def stable(
-    k: Knowledge
-  ): String = {
+  def stable(k: Knowledge): String = {
     val b = new StringBuilder
     b ++= """あなたは「skakapo」です。sBirds シリーズ（社内の Web サービス群）を横断して、利用者の依頼（不具合の修正・機能の追加・調査など）を進める AI エージェントです。
             |利用者の代わりに、各サービスを MCP のツールで読み書きし、Git のリポジトリを調べて修正し、プルリクエストを出します。
@@ -38,10 +32,7 @@ object Prompt {
     b ++= "# sBirds シリーズと連携するサービス\n\n"
     b ++= "ツールの名前は「<サービスのキー>__<ツール>」です。利用者が連携していないサービスのツールは使えません（連携の画面で連携してもらいます）。\n\n"
     k.services.foreach {
-      (
-        s,
-        tools
-      ) =>
+      (s, tools) =>
         b ++= s"## ${s.name}（キー: ${s.key}・${ServiceKind.label(s.kind)}）\n"
         if (s.baseUrl.nonEmpty) b ++= s"URL: ${s.baseUrl}\n"
         if (s.description.trim.nonEmpty) b ++= s.description.trim + "\n"
@@ -77,10 +68,7 @@ object Prompt {
       k.clouds.foreach { c =>
         b ++= s"## ${c.name}\n- クラウド: ${CloudProvider.label(c.provider)}\n"
         List("region" -> "既定のリージョン", "projectId" -> "既定のプロジェクト", "subscriptionId" -> "既定のサブスクリプション").foreach {
-          (
-            key,
-            label
-          ) =>
+          (key, label) =>
             c.config.get(key).filter(_.nonEmpty).foreach(v => b ++= s"- $label: $v\n")
         }
         if (c.notes.trim.nonEmpty) b ++= s"- 説明・決まり:\n${indent(c.notes.trim)}\n"
@@ -101,18 +89,16 @@ object Prompt {
   }
 
   /** 会話ごとの前提（利用者・連携の状態・依頼の種類の手順）. */
-  def session(
-    who: Who,
-    connected: List[String],
-    notConnected: List[String],
-    rt: Option[RequestTypeDto],
-    trackers: List[TrackerSettings],
-    form: Map[String, String],
-    userContext: String = "",
-    titleAuto: Boolean = false,
-    viaAgent: List[String] = Nil,
-    group: Option[UserGroupDto] = None
-  ): String = {
+  def session(who: Who,
+              connected: List[String],
+              notConnected: List[String],
+              rt: Option[RequestTypeDto],
+              trackers: List[TrackerSettings],
+              form: Map[String, String],
+              userContext: String = "",
+              titleAuto: Boolean = false,
+              viaAgent: List[String] = Nil,
+              group: Option[UserGroupDto] = None): String = {
     val b = new StringBuilder
     group.foreach { g =>
       b ++= s"# 利用者の種類: ${g.label}\n\n"
@@ -145,17 +131,9 @@ object Prompt {
   }
 
   /** 手順の中の変数（{{tracker.service}}・{{tracker.project}}・{{form.<項目>}}）を置き換える. */
-  def expand(
-    text: String,
-    tracker: TrackerSettings,
-    form: Map[String, String]
-  ): String = {
-    val vars = Map("tracker.service" -> tracker.service, "tracker.project" -> tracker.project) ++ form.map(
-      (
-        k,
-        v
-      ) => s"form.$k" -> v
-    )
+  def expand(text: String, tracker: TrackerSettings, form: Map[String, String]): String = {
+    val vars = Map("tracker.service" -> tracker.service, "tracker.project" -> tracker.project) ++
+      form.map((k, v) => s"form.$k" -> v)
     "\\{\\{\\s*([a-z0-9_.]+)\\s*\\}\\}".r.replaceAllIn(
       text,
       m => java.util.regex.Matcher.quoteReplacement(vars.getOrElse(m.group(1), m.matched))
@@ -163,10 +141,7 @@ object Prompt {
   }
 
   /** 最初のフォームの入力を、エージェントへの最初の発言にする. */
-  def formMessage(
-    rt: RequestTypeDto,
-    values: Map[String, String]
-  ): String = {
+  def formMessage(rt: RequestTypeDto, values: Map[String, String]): String = {
     val lines = rt.fields.flatMap(f =>
       values.get(f.name).map { v =>
         if (v.contains('\n')) s"【${f.label}】\n$v" else s"【${f.label}】$v"
@@ -178,10 +153,7 @@ object Prompt {
   /**
    * 会話の題名と、仮の題名か（エージェントが決め直す）. フォームの title があればそれ、なければ文の項目の最初の行（仮）.
    */
-  def title(
-    rt: RequestTypeDto,
-    values: Map[String, String]
-  ): (String, Boolean) =
+  def title(rt: RequestTypeDto, values: Map[String, String]): (String, Boolean) =
     values.get("title").filter(_.trim.nonEmpty) match {
       case Some(t) => (oneLine(t, 100), false)
       case None =>
@@ -191,17 +163,12 @@ object Prompt {
         (firstText.map(t => oneLine(t.linesIterator.find(_.trim.nonEmpty).getOrElse(t), 40)).getOrElse(rt.label), true)
     }
 
-  def oneLine(
-    s: String,
-    max: Int
-  ): String = {
+  def oneLine(s: String, max: Int): String = {
     val t = s.replaceAll("\\s+", " ").trim
     if (t.length <= max) t else t.take(max - 1) + "…"
   }
 
-  private def indent(
-    s: String
-  ): String = s.linesIterator.map("  " + _).mkString("\n")
+  private def indent(s: String): String = s.linesIterator.map("  " + _).mkString("\n")
 
   private val Rules: String =
     """# 作業の決まり

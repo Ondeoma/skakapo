@@ -15,18 +15,13 @@ import scala.concurrent.duration.*
 object GitHosts {
 
   /** 共有アカウントの API の場所（空なら既定. Forgejo はリポジトリのホストの /api/v1）. */
-  def apiFor(
-    provider: String,
-    apiUrl: String,
-    repoUrl: String
-  ): String =
+  def apiFor(provider: String, apiUrl: String, repoUrl: String): String =
     if apiUrl.nonEmpty then apiUrl.stripSuffix("/")
     else if provider == skakapo.shared.GitProvider.Forgejo then GitAuth.origin(repoUrl).fold("")(_ + "/api/v1")
     else skakapo.shared.GitProvider.defaultApi(provider)
 }
 
-final class GitHosts(
-  http: Client[IO]) {
+final class GitHosts(http: Client[IO]) {
 
   /** GitHub App・Bitbucket の OAuth コンシューマーのトークン. */
   val apps: GitApps = new GitApps(http, this)
@@ -34,27 +29,18 @@ final class GitHosts(
   private val MaxBody = 2L * 1024 * 1024
 
   /** https://host/owner/repo(.git) から (owner, repo). */
-  def ownerRepo(
-    url: String
-  ): Option[(String, String)] =
+  def ownerRepo(url: String): Option[(String, String)] =
     "^https://[^/@]+/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\\.git)?/?$".r.findFirstMatchIn(url.trim).map(m =>
       m.group(1) -> m.group(2)
     )
 
   /** GitHub のサービスの URL（https://github.com・GitHub Enterprise）から API の場所. */
-  def apiBase(
-    serviceBase: String
-  ): String = {
+  def apiBase(serviceBase: String): String = {
     val b = serviceBase.stripSuffix("/")
     if b.isEmpty || b == "https://github.com" then "https://api.github.com" else s"$b/api/v3"
   }
 
-  private def call(
-    c: RepoCreds,
-    method: Method,
-    url: String,
-    body: Json = Json.Null
-  ): IO[(Status, Json)] = {
+  private def call(c: RepoCreds, method: Method, url: String, body: Json = Json.Null): IO[(Status, Json)] = {
     val auth = c.provider match {
       // Bitbucket: アクセストークン（x-token-auth）は Bearer、app password は Basic（ユーザー名:パスワード）
       case skakapo.shared.GitProvider.Bitbucket if c.auth.username != "x-token-auth" =>
@@ -68,13 +54,11 @@ final class GitHosts(
   }
 
   /** Git のホストの API を呼ぶ（GitHosts と GitApps の共通. 応答の JSON は 2MB まで）. */
-  private[agent] def send(
-    method: Method,
-    url: String,
-    auth: Authorization,
-    github: Boolean,
-    body: Json = Json.Null
-  ): IO[(Status, Json)] = {
+  private[agent] def send(method: Method,
+                          url: String,
+                          auth: Authorization,
+                          github: Boolean,
+                          body: Json = Json.Null): IO[(Status, Json)] = {
     val req0 = Request[IO](method, Uri.unsafeFromString(url))
     val req = (if body.isNull then req0 else req0.withEntity(body))
       .putHeaders(
@@ -89,36 +73,25 @@ final class GitHosts(
     ).timeout(60.seconds)
   }
 
-  private[agent] def message(
-    j: Json
-  ): String =
+  private[agent] def message(j: Json): String =
     (j.hcursor.get[String]("message").toOption.toList ++
       j.hcursor.downField("error").get[String]("message").toOption.toList ++
       j.hcursor.downField("errors").as[List[Json]].getOrElse(Nil).flatMap(e =>
         e.hcursor.get[String]("message").toOption
       )).mkString(" / ").take(500)
 
-  private def withRepo(
-    repo: RepositoryDto
-  )(
-    f: (String, String) => IO[Out]
-  ): IO[Out] =
+  private def withRepo(repo: RepositoryDto)(f: (String, String) => IO[Out]): IO[Out] =
     ownerRepo(repo.url).fold(IO.pure(Out.err(s"${repo.url} からオーナーとリポジトリを読み取れません")))(f.tupled)
 
-  def createPullRequest(
-    c: RepoCreds,
-    repo: RepositoryDto,
-    title: String,
-    body: String,
-    head: String,
-    base: String,
-    draft: Boolean
-  ): IO[Out] =
+  def createPullRequest(c: RepoCreds,
+                        repo: RepositoryDto,
+                        title: String,
+                        body: String,
+                        head: String,
+                        base: String,
+                        draft: Boolean): IO[Out] =
     withRepo(repo) {
-      (
-        o,
-        r
-      ) =>
+      (o, r) =>
         c.provider match {
           // Forgejo の API は GitHub と同じ形. 下書きの項目はないので、題名の先頭を WIP: にする
           case skakapo.shared.GitProvider.Github | skakapo.shared.GitProvider.Forgejo =>
@@ -135,10 +108,7 @@ final class GitHosts(
                 "base" -> base.asJson
               ).deepMerge(if forgejo then Json.obj() else Json.obj("draft" -> draft.asJson))
             ).map {
-              (
-                st,
-                j
-              ) =>
+              (st, j) =>
                 if st.isSuccess then
                   Out(
                     s"プルリクエストを出しました: ${j.hcursor.get[String]("html_url").getOrElse("")}（#${j.hcursor.get[Int]("number").getOrElse(0)}）"
@@ -158,10 +128,7 @@ final class GitHosts(
                 "draft" -> draft.asJson
               )
             ).map {
-              (
-                st,
-                j
-              ) =>
+              (st, j) =>
                 if st.isSuccess then
                   Out(
                     s"プルリクエストを出しました: ${j.hcursor.downField("links").downField("html").get[String]("href").getOrElse("")}（#${j.hcursor.get[Int]("id").getOrElse(0)}）"
@@ -172,25 +139,14 @@ final class GitHosts(
         }
     }
 
-  def comment(
-    c: RepoCreds,
-    repo: RepositoryDto,
-    number: Int,
-    body: String
-  ): IO[Out] =
+  def comment(c: RepoCreds, repo: RepositoryDto, number: Int, body: String): IO[Out] =
     withRepo(repo) {
-      (
-        o,
-        r
-      ) =>
+      (o, r) =>
         c.provider match {
           case skakapo.shared.GitProvider.Github | skakapo.shared.GitProvider.Forgejo =>
             // issues の API はプルリクエストでない issue にも書けるので、先にプルリクエストであることを確かめる
             call(c, Method.GET, s"${c.apiBase}/repos/$o/$r/pulls/$number").flatMap {
-              (
-                pst,
-                _
-              ) =>
+              (pst, _) =>
                 if !pst.isSuccess then IO.pure(Out.err(s"プルリクエスト #$number が見つかりません（${pst.code}）"))
                 else
                   call(
@@ -199,10 +155,7 @@ final class GitHosts(
                     s"${c.apiBase}/repos/$o/$r/issues/$number/comments",
                     Json.obj("body" -> body.asJson)
                   ).map {
-                    (
-                      st,
-                      j
-                    ) =>
+                    (st, j) =>
                       if st.isSuccess then Out(s"コメントしました: ${j.hcursor.get[String]("html_url").getOrElse("")}")
                       else Out.err(s"コメントできませんでした（${st.code}）: ${message(j)}")
                   }
@@ -214,10 +167,7 @@ final class GitHosts(
               s"${c.apiBase}/repositories/$o/$r/pullrequests/$number/comments",
               Json.obj("content" -> Json.obj("raw" -> body.asJson))
             ).map {
-              (
-                st,
-                j
-              ) =>
+              (st, j) =>
                 if st.isSuccess then
                   Out(s"コメントしました: ${j.hcursor.downField("links").downField("html").get[String]("href").getOrElse("")}")
                 else Out.err(s"コメントできませんでした（${st.code}）: ${message(j)}")

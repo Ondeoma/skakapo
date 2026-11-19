@@ -17,11 +17,8 @@ import java.time.Instant
 import java.util.UUID
 
 /** ログイン（OIDC・開発用）・ログアウト・自分の情報とアイコン・ユーザーの検索. */
-final class AuthRoutes(
-  oidc: Option[OidcClient],
-  users: UserStore,
-  val sessions: SessionAuth,
-  cfg: ApiConfig) extends RouteSupport {
+final class AuthRoutes(oidc: Option[OidcClient], users: UserStore, val sessions: SessionAuth, cfg: ApiConfig)
+  extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "auth" / "login" => getAuthLogin(req)
@@ -39,9 +36,7 @@ final class AuthRoutes(
     case req @ DELETE -> Root / "api" / "tokens" / UuidVar(id) => deleteToken(req, id)
   }
 
-  private def getAuthLogin(
-    req: Request[IO]
-  ): IO[Response[IO]] = {
+  private def getAuthLogin(req: Request[IO]): IO[Response[IO]] = {
     val back = SafePath.of(param(req, "returnTo"))
     oidc match {
       case Some(o) =>
@@ -55,9 +50,7 @@ final class AuthRoutes(
     }
   }
 
-  private def getAuthCallback(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAuthCallback(req: Request[IO]): IO[Response[IO]] =
     (oidc, param(req, "code"), param(req, "state"), param(req, "error")) match {
       case (_, _, _, Some(e)) =>
         // IdP からの説明は URL で差し替えられるので画面には出さず、ログにだけ残す
@@ -98,24 +91,17 @@ final class AuthRoutes(
       case _ => err(ErrorCode.LoginCodeStateRequired)
     }
 
-  private def postAuthLogout(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAuthLogout(req: Request[IO]): IO[Response[IO]] =
     if !fromScreen(req) then err(ErrorCode.ScreenOnly)
     else
       sessions.revoke(req).flatMap {
-        (
-          idToken,
-          c
-        ) =>
+        (idToken, c) =>
           oidc.traverse(_.logoutUri(idToken, cfg.publicUrl + "/")).map(_.flatten).flatMap { idp =>
             Ok(Json.obj("redirect" -> idp.fold("/login?loggedOut=1")(_.renderString).asJson)).map(_.addCookie(c))
           }
       }
 
-  private def postAuthDevLogin(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAuthDevLogin(req: Request[IO]): IO[Response[IO]] =
     body[Json](req) { j =>
       val c = j.hcursor
       val name = c.get[String]("name").getOrElse("").trim
@@ -140,14 +126,10 @@ final class AuthRoutes(
   private def getClientConfig(): IO[Response[IO]] =
     Ok(ClientConfigDto(cfg.devLogin && oidc.isEmpty, oidc.isDefined, cfg.version, cfg.agentReady))
 
-  private def getMe(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getMe(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u => sessions.appNames(req).flatMap(n => Ok(u.me.copy(appNames = n))))
 
-  private def patchMe(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def patchMe(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u =>
       body[UpdateMeReq](req) { r =>
         val tz = r.timezone.map(_.trim).filter(_.nonEmpty)
@@ -158,9 +140,7 @@ final class AuthRoutes(
       }
     )
 
-  private def putMeAvatar(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def putMeAvatar(req: Request[IO]): IO[Response[IO]] =
     authed(req) { u =>
       req.body.take(AvatarImage.MaxBytes + 1L).compile.to(Array).flatMap { data =>
         if data.length > AvatarImage.MaxBytes then err(ErrorCode.AvatarTooLarge)
@@ -171,15 +151,10 @@ final class AuthRoutes(
       }
     }
 
-  private def deleteMeAvatar(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def deleteMeAvatar(req: Request[IO]): IO[Response[IO]] =
     authed(req)(u => users.deleteAvatar(u.id) *> me(u))
 
-  private def getUserAvatar(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getUserAvatar(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { _ =>
       users.avatar(id).flatMap {
         case None => err(ErrorCode.AvatarNotFound)
@@ -194,14 +169,10 @@ final class AuthRoutes(
       }
     }
 
-  private def getTokens(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getTokens(req: Request[IO]): IO[Response[IO]] =
     interactive(req)(u => users.tokens(u.id).flatMap(Ok(_)))
 
-  private def postTokens(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postTokens(req: Request[IO]): IO[Response[IO]] =
     interactive(req)(u =>
       body[ApiTokenReq](req) { r =>
         val name = r.name.trim
@@ -223,16 +194,10 @@ final class AuthRoutes(
       }
     )
 
-  private def deleteToken(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteToken(req: Request[IO], id: UUID): IO[Response[IO]] =
     interactive(req)(u => users.revokeToken(u.id, id).ifM(NoContent(), err(ErrorCode.ApiTokenNotFound)))
 
-  private def redirect(
-    to: String,
-    cookie: Option[ResponseCookie] = None
-  ): IO[Response[IO]] = {
+  private def redirect(to: String, cookie: Option[ResponseCookie] = None): IO[Response[IO]] = {
     // SafePath は % を通すので、URL として読めないものは / に戻す
     val r = Response[IO](Status.Found).putHeaders(
       Location(Uri.fromString(to).getOrElse(Uri(path = Uri.Path.Root))),
@@ -246,10 +211,7 @@ final class AuthRoutes(
    * （攻撃者が途中で止めたコールバックの URL を踏ませて、攻撃者のアカウントでログインさせる「ログイン CSRF」を防ぐ）.
    */
   private val LoginCookie = "skakapo_login"
-  private def loginCookie(
-    state: String,
-    maxAge: Long
-  ) =
+  private def loginCookie(state: String, maxAge: Long) =
     SessionAuth.cookie(
       cfg,
       LoginCookie,
@@ -257,31 +219,20 @@ final class AuthRoutes(
       maxAge,
       "/auth"
     )
-  private def sameBrowser(
-    req: Request[IO],
-    state: String
-  ): Boolean =
+  private def sameBrowser(req: Request[IO], state: String): Boolean =
     req.cookies.find(_.name == LoginCookie).exists(c =>
       java.security.MessageDigest.isEqual(c.content.getBytes, Crypto.hex(Crypto.sha256(state)).getBytes)
     )
 
   /** 変更した後の自分の情報. */
-  private def me(
-    u: User
-  ): IO[Response[IO]] = users.find(u.id).flatMap(x => Ok(x.getOrElse(u).me))
+  private def me(u: User): IO[Response[IO]] = users.find(u.id).flatMap(x => Ok(x.getOrElse(u).me))
 
   /** セッションを発行する. */
-  private def loggedIn(
-    u: User,
-    idToken: Option[String]
-  ): IO[ResponseCookie] =
+  private def loggedIn(u: User, idToken: Option[String]): IO[ResponseCookie] =
     sessions.issue(u, idToken) <*
       sbirds.observe.Metrics.count("skakapo.logins", "via" -> idToken.fold("dev")(_ => "oidc"))
 
-  private def page(
-    code: ErrorCode,
-    detail: String | Null = null,
-    logDetail: String = ""
-  ): IO[Response[IO]] = HtmlPage.error("ログインできませんでした", code, "/auth/login", "もう一度ログインする", detail, logDetail)
+  private def page(code: ErrorCode, detail: String | Null = null, logDetail: String = ""): IO[Response[IO]] =
+    HtmlPage.error("ログインできませんでした", code, "/auth/login", "もう一度ログインする", detail, logDetail)
 
 }

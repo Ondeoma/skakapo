@@ -16,18 +16,17 @@ import skakapo.shared.*
 import java.util.UUID
 
 /** 管理画面: エージェントの設定（前提のコンテキスト・モデル）・連携するサービス・リポジトリ・依頼の種類・ノードの様子. */
-final class AdminRoutes(
-  config: ConfigStore,
-  users: UserStore,
-  nodes: NodeStore,
-  runner: Runner,
-  conns: skakapo.agent.Connections,
-  hosts: skakapo.agent.GitHosts,
-  clouds: skakapo.agent.CloudClients,
-  box: Option[SecretBox],
-  agentReady: Boolean,
-  val sessions: SessionAuth,
-  creditStore: CreditStore) extends RouteSupport {
+final class AdminRoutes(config: ConfigStore,
+                        users: UserStore,
+                        nodes: NodeStore,
+                        runner: Runner,
+                        conns: skakapo.agent.Connections,
+                        hosts: skakapo.agent.GitHosts,
+                        clouds: skakapo.agent.CloudClients,
+                        box: Option[SecretBox],
+                        agentReady: Boolean,
+                        val sessions: SessionAuth,
+                        creditStore: CreditStore) extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     // ------------------------------------------------------------ 基本
@@ -66,21 +65,12 @@ final class AdminRoutes(
     case req @ DELETE -> Root / "api" / "admin" / "request-types" / UuidVar(id) => deleteAdminRequestType(req, id)
   }
 
-  private def getAdminSettings(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminSettings(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ =>
-      (config.agent, config.trackers).flatMapN(
-        (
-          a,
-          t
-        ) => Ok(AdminSettingsDto(a, t, agentReady))
-      )
+      (config.agent, config.trackers).flatMapN((a, t) => Ok(AdminSettingsDto(a, t, agentReady)))
     )
 
-  private def putAdminSettings(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def putAdminSettings(req: Request[IO]): IO[Response[IO]] =
     admin(req)(u =>
       body[AdminSettingsReq](req)(r =>
         valid(checkAgent(r.agent)) { a =>
@@ -92,58 +82,34 @@ final class AdminRoutes(
       )
     )
 
-  private def getAdminPrompt(
-    req: Request[IO]
-  ): IO[Response[IO]] = {
+  private def getAdminPrompt(req: Request[IO]): IO[Response[IO]] = {
     // 管理者の依頼で見える前提（クラウドの資格情報は、管理者が使えるもの）
     admin(req)(_ =>
-      (runner.knowledge, config.cloudCredentials(enabledOnly = true)).flatMapN(
-        (
-          k,
-          cs
-        ) =>
-          Ok(Json.obj("text" -> Prompt.stable(k.copy(clouds = cs.filter(_.usableBy(true, None)))).asJson))
+      (runner.knowledge, config.cloudCredentials(enabledOnly = true)).flatMapN((k, cs) =>
+        Ok(Json.obj("text" -> Prompt.stable(k.copy(clouds = cs.filter(_.usableBy(true, None)))).asJson))
       )
     )
   }
 
-  private def getAdminStats(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminStats(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => nodes.stats.flatMap(Ok(_)))
 
-  private def getAdminCredits(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminCredits(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ =>
       (config.agent, creditStore.perUser, creditStore.totals).flatMapN {
-        (
-          a,
-          rows,
-          mt
-        ) =>
+        (a, rows, mt) =>
           {
             val (month, total) = mt
             Ok(AdminCreditsDto(
               month,
               total,
-              rows.map(
-                (
-                  u,
-                  used,
-                  runs,
-                  ov
-                ) => UserCreditDto(u.brief, used, ov.getOrElse(a.defaultUserCapUsd), ov, runs)
-              )
+              rows.map((u, used, runs, ov) => UserCreditDto(u.brief, used, ov.getOrElse(a.defaultUserCapUsd), ov, runs))
             ))
           }
       }
     )
 
-  private def putAdminCredit(
-    req: Request[IO],
-    uid: UUID
-  ): IO[Response[IO]] =
+  private def putAdminCredit(req: Request[IO], uid: UUID): IO[Response[IO]] =
     admin(req)(me =>
       body[UserCapReq](req)(r =>
         if r.useDefault then creditStore.clearCap(uid) *> NoContent()
@@ -151,99 +117,63 @@ final class AdminRoutes(
       )
     )
 
-  private def getAdminServices(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminServices(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.services().flatMap(Ok(_)))
 
-  private def postAdminServices(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminServices(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => body[ServiceReq](req)(r => valid(checkService(r))(saveService(None, _))))
 
-  private def putAdminService(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminService(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => body[ServiceReq](req)(r => valid(checkService(r))(saveService(Some(id), _))))
 
-  private def deleteAdminService(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminService(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       config.deleteService(id).ifM(conns.forgetService(id) *> NoContent(), err(ErrorCode.ServiceNotFound))
     )
 
-  private def getAdminRepositories(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminRepositories(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.repositories().flatMap(Ok(_)))
 
-  private def postAdminRepositories(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminRepositories(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => body[RepositoryReq](req)(r => validRepo(r)(x => saved(None)(config.saveRepository(None, x)))))
 
-  private def putAdminRepository(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminRepository(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       body[RepositoryReq](req)(r => validRepo(r)(x => saved(Some(id))(config.saveRepository(Some(id), x))))
     )
 
-  private def getAdminUserGroups(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminUserGroups(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.userGroups.flatMap(Ok(_)))
 
-  private def postAdminUserGroups(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminUserGroups(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ =>
       body[UserGroupReq](req)(r => valid(checkGroup(r))(x => saved(None)(config.saveUserGroup(None, x))))
     )
 
-  private def putAdminUserGroup(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminUserGroup(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       body[UserGroupReq](req)(r => valid(checkGroup(r))(x => saved(Some(id))(config.saveUserGroup(Some(id), x))))
     )
 
-  private def deleteAdminUserGroup(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminUserGroup(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => config.deleteUserGroup(id).ifM(NoContent(), err(ErrorCode.UserGroupNotFound)))
 
-  private def getAdminUsers(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminUsers(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ =>
-      (users.listActive, config.userGroups).flatMapN(
-        (
-          us,
-          gs
-        ) =>
-          Ok(us.map(u =>
-            AdminUserDto(
-              u.brief,
-              u.isAdmin,
-              u.idpGroups,
-              u.groupId,
-              UserGroups.resolve(u.groupId, u.idpGroups, gs).map(_.label)
-            )
-          ))
+      (users.listActive, config.userGroups).flatMapN((us, gs) =>
+        Ok(us.map(u =>
+          AdminUserDto(
+            u.brief,
+            u.isAdmin,
+            u.idpGroups,
+            u.groupId,
+            UserGroups.resolve(u.groupId, u.idpGroups, gs).map(_.label)
+          )
+        ))
       )
     )
 
-  private def putAdminUserAssignedGroup(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminUserAssignedGroup(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       body[AssignGroupReq](req) { r =>
         config.userGroups.flatMap { gs =>
@@ -253,101 +183,61 @@ final class AdminRoutes(
       }
     )
 
-  private def getAdminCloudCredentials(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminCloudCredentials(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.cloudCredentials().flatMap(Ok(_)))
 
-  private def postAdminCloudCredentials(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminCloudCredentials(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => body[CloudCredentialReq](req)(saveCloud(None, _)))
 
-  private def putAdminCloudCredential(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminCloudCredential(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => body[CloudCredentialReq](req)(saveCloud(Some(id), _)))
 
-  private def deleteAdminCloudCredential(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminCloudCredential(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       config.deleteCloudCredential(id).ifM(clouds.forget(id) *> NoContent(), err(ErrorCode.CloudCredentialNotFound))
     )
 
-  private def getAdminGitAccounts(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminGitAccounts(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.gitAccounts.flatMap(Ok(_)))
 
-  private def postAdminGitAccounts(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminGitAccounts(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => body[GitAccountReq](req)(saveAccount(None, _)))
 
-  private def putAdminGitAccount(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminGitAccount(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => body[GitAccountReq](req)(saveAccount(Some(id), _)))
 
-  private def deleteAdminGitAccount(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminGitAccount(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       config.deleteGitAccount(id).ifM(hosts.apps.forget(id) *> NoContent(), err(ErrorCode.GitAccountNotFound))
     )
 
-  private def deleteAdminRepository(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminRepository(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => config.deleteRepository(id).ifM(NoContent(), err(ErrorCode.RepositoryNotFound)))
 
-  private def getAdminRequestTypes(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminRequestTypes(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => config.requestTypes().flatMap(Ok(_)))
 
-  private def postAdminRequestTypes(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAdminRequestTypes(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ =>
       body[RequestTypeReq](req)(r => valid(checkType(r))(x => saved(None)(config.saveRequestType(None, x))))
     )
 
-  private def putAdminRequestType(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putAdminRequestType(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ =>
       body[RequestTypeReq](req)(r => valid(checkType(r))(x => saved(Some(id))(config.saveRequestType(Some(id), x))))
     )
 
-  private def deleteAdminRequestType(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminRequestType(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req)(_ => config.deleteRequestType(id).ifM(NoContent(), err(ErrorCode.RequestTypeNotFound)))
 
-  private def usd(
-    v: Option[Double],
-    what: String
-  ): Either[String, Option[Double]] =
+  private def usd(v: Option[Double], what: String): Either[String, Option[Double]] =
     Either.cond(
       v.forall(x => x >= 0 && x <= 1000000 && !x.isNaN),
       v.map(x => math.round(x * 100) / 100.0),
       s"$what は 0〜1000000 ドルにしてください"
     )
 
-  private def url(
-    v: String,
-    what: String,
-    required: Boolean = false
-  ): Either[String, String] = {
+  private def url(v: String, what: String, required: Boolean = false): Either[String, String] = {
     val t = v.trim.stripSuffix("/")
     if t.isEmpty then Either.cond(!required, "", s"$what を入れてください")
     else {
@@ -362,9 +252,7 @@ final class AdminRoutes(
     }
   }
 
-  private def checkAgent(
-    a: AgentSettings
-  ): Either[String, AgentSettings] =
+  private def checkAgent(a: AgentSettings): Either[String, AgentSettings] =
     for {
       m <- Either.cond(Models.all.exists(_._1 == a.model.trim), a.model.trim, "モデルは一覧から選んでください")
       _ <- Either.cond(Effort.all.contains(a.effort), (), "effort は low・medium・high・xhigh・max のどれかです")
@@ -376,9 +264,7 @@ final class AdminRoutes(
     } yield a.copy(model = m, monthlyBudgetUsd = b, defaultUserCapUsd = c)
 
   /** 起票先: 1〜20件・名前は重ならない・既定はちょうど1つ（なければ最初のもの）. */
-  private def checkTrackers(
-    ts: List[TrackerSettings]
-  ): Either[String, List[TrackerSettings]] = {
+  private def checkTrackers(ts: List[TrackerSettings]): Either[String, List[TrackerSettings]] = {
     val clean = ts.map(t => t.copy(name = t.name.trim, service = t.service.trim, project = t.project.trim))
     if clean.isEmpty || clean.size > 20 then Left("起票先は1〜20件にしてください")
     else if clean.exists(t => t.name.isEmpty || t.name.length > 50) then Left("起票先の名前を50文字以内で入れてください")
@@ -388,18 +274,11 @@ final class AdminRoutes(
       Left("起票先の設定が長すぎます")
     else {
       val d = clean.indexWhere(_.isDefault).max(0)
-      Right(clean.zipWithIndex.map(
-        (
-          t,
-          i
-        ) => t.copy(isDefault = i == d)
-      ))
+      Right(clean.zipWithIndex.map((t, i) => t.copy(isDefault = i == d)))
     }
   }
 
-  private def checkService(
-    r: ServiceReq
-  ): Either[String, ServiceReq] =
+  private def checkService(r: ServiceReq): Either[String, ServiceReq] =
     for {
       _ <- Either.cond(Keys.service.matches(r.key), (), "キーは英小文字で始まる英小文字・数字（2〜20文字）にしてください")
       name <- Check.name(r.name)
@@ -430,9 +309,7 @@ final class AdminRoutes(
       oauth = r.oauth.copy(authorizeUrl = az, tokenUrl = tk, clientId = r.oauth.clientId.trim)
     )
 
-  private def checkRepo(
-    r: RepositoryReq
-  ): Either[String, RepositoryReq] =
+  private def checkRepo(r: RepositoryReq): Either[String, RepositoryReq] =
     for {
       _ <- Either.cond(Keys.repo.matches(r.name), (), "名前は英数字・. _ -（64文字まで）にしてください")
       u <- url(r.url, "リポジトリの URL", required = true).filterOrElse(
@@ -448,10 +325,7 @@ final class AdminRoutes(
       _ <- Check.text(r.notes, "作業の決まり", 20000)
     } yield r.copy(url = u)
 
-  private def checkAccount(
-    r: GitAccountReq,
-    creating: Boolean
-  ): Either[String, GitAccountReq] =
+  private def checkAccount(r: GitAccountReq, creating: Boolean): Either[String, GitAccountReq] =
     for {
       n <- Check.name(r.name, "アカウントの名前")
       _ <- Either.cond(GitProvider.all.contains(r.provider), (), "ホストの種類が正しくありません")
@@ -518,10 +392,7 @@ final class AdminRoutes(
    * 共有アカウントを保存する. GitHub App・OAuth コンシューマーは、保存する前に鍵・シークレットで認証できるか確かめる
    * （秘密を入れ直さないときは、保存してある秘密で確かめる）. 保存したら、覚えていたトークンを捨てる.
    */
-  private def saveAccount(
-    id: Option[UUID],
-    r: GitAccountReq
-  ): IO[Response[IO]] =
+  private def saveAccount(id: Option[UUID], r: GitAccountReq): IO[Response[IO]] =
     valid(checkAccount(r, id.isEmpty)) { x =>
       val newSecret = x.token.map(_.trim).filter(_.nonEmpty)
       val probe = GitAccountDto(
@@ -540,21 +411,13 @@ final class AdminRoutes(
       val bound =
         id.fold(IO.pure(List.empty[RepositoryDto]))(i => config.repositories().map(_.filter(_.accountId.contains(i))))
       (id.flatTraverse(config.gitAccountWithToken), bound).flatMapN {
-        (
-          before,
-          repos
-        ) =>
+        (before, repos) =>
           {
             // 送り先（ホストの種類・API の URL）を変えたのに秘密を入れ直さないときは断る（保存してある秘密を別のホストへ送らせない）.
             // 結び付けたリポジトリが新しい送り先のホストと違うときも断る（前のホストのリポジトリに新しい秘密を送らない）
-            val moved = Option.when(newSecret.isEmpty && before.exists(
-              (
-                b,
-                _
-              ) => b.provider != x.provider || b.apiUrl != x.apiUrl
-            ))(
-              "送り先（ホストの種類・API の URL）を変えたときは、秘密を入れ直してください"
-            )
+            val moved = Option.when(newSecret.isEmpty && before.exists((b, _) =>
+              b.provider != x.provider || b.apiUrl != x.apiUrl
+            ))("送り先（ホストの種類・API の URL）を変えたときは、秘密を入れ直してください")
             val mismatch = accountHost(probe).flatMap(h =>
               repos.find(r => skakapo.agent.GitAuth.origin(r.url) != Some(h)).map(r =>
                 s"結び付けたリポジトリ「${r.name}」のホストが、送り先（$h）と違います。先にリポジトリの結び付けを変えてください"
@@ -564,19 +427,11 @@ final class AdminRoutes(
               probeAndSave(
                 id,
                 newSecret,
-                IO.pure(before.flatMap(
-                  (
-                    _,
-                    enc
-                  ) => box.flatMap(_.decrypt(enc))
-                )),
+                IO.pure(before.flatMap((_, enc) => box.flatMap(_.decrypt(enc)))),
                 s =>
                   if x.authKind == GitAuthKind.Token then IO.pure(Right(""))
                   else hosts.apps.probe(probe, s, skakapo.agent.GitHosts.apiFor(x.provider, x.apiUrl, "")),
-                (
-                  enc,
-                  _
-                ) => config.saveGitAccount(id, x, enc).flatTap(_.traverse_(a => hosts.apps.forget(a.id)))
+                (enc, _) => config.saveGitAccount(id, x, enc).flatTap(_.traverse_(a => hosts.apps.forget(a.id)))
               )
             }
           }
@@ -592,8 +447,7 @@ final class AdminRoutes(
     newSecret: Option[String],
     stored: IO[Option[String]],
     probe: String => IO[Either[String, String]],
-    save: (Option[String], String) => IO[Either[String, A]]
-  ): IO[Response[IO]] =
+    save: (Option[String], String) => IO[Either[String, A]]): IO[Response[IO]] =
     newSecret.fold(stored)(s => IO.pure(Some(s))).flatMap {
       case None => err(ErrorCode.SecretRequired)
       case Some(p) => probe(p).flatMap {
@@ -602,9 +456,7 @@ final class AdminRoutes(
         }
     }
 
-  private def checkGroup(
-    r: UserGroupReq
-  ): Either[String, UserGroupReq] =
+  private def checkGroup(r: UserGroupReq): Either[String, UserGroupReq] =
     for {
       _ <- Either.cond(Keys.requestType.matches(r.key), (), "キーは英小文字で始まる英小文字・数字・_・-（32文字まで）にしてください")
       l <- Check.name(r.label, "表示名")
@@ -621,67 +473,32 @@ final class AdminRoutes(
   /** 保存する前の確かめに使う仮の ID（まだ保存していないもの）. */
   private val ProbeId = NilId.value
 
-  private def checkCloud(
-    r: CloudCredentialReq,
-    creating: Boolean
-  ): Either[String, CloudCredentialReq] =
+  private def checkCloud(r: CloudCredentialReq, creating: Boolean): Either[String, CloudCredentialReq] =
     for {
       n <- Check.name(r.name, "資格情報の名前")
       _ <- Either.cond(CloudProvider.all.contains(r.provider), (), "クラウドの種類が正しくありません")
       // 送ってよいホストは「a,b」の形にそろえる（空白を除く）
-      cfg = r.config.map(
-        (
-          k,
-          v
-        ) =>
-          k ->
-            (if k == CloudProvider.AllowedHosts then v.split(",").map(_.trim).filter(_.nonEmpty).mkString(",")
-             else v.trim)
+      cfg = r.config.map((k, v) =>
+        k ->
+          (if k == CloudProvider.AllowedHosts then v.split(",").map(_.trim).filter(_.nonEmpty).mkString(",")
+           else v.trim)
       )
-        .filter(
-          (
-            k,
-            v
-          ) => CloudProvider.configFields(r.provider).exists(_._1 == k) && v.nonEmpty
-        )
-      _ <- CloudProvider.configFields(r.provider).find(
-        (
-          k,
-          _,
-          req
-        ) => req && !cfg.contains(k)
-      ).map(
-        (
-          _,
-          label,
-          _
-        ) => s"${label}を入れてください"
+        .filter((k, v) => CloudProvider.configFields(r.provider).exists(_._1 == k) && v.nonEmpty)
+      _ <- CloudProvider.configFields(r.provider).find((k, _, req) => req && !cfg.contains(k)).map((_, label, _) =>
+        s"${label}を入れてください"
       ).toLeft(())
       _ <- Either.cond(
         cfg.values.forall(v => v.length <= 200 && !v.exists(c => c.isWhitespace || c.isControl)),
         (),
         "設定の値に空白は使えません（200文字まで）"
       )
-      sec = r.secrets.map(_.view.mapValues(_.trim).filter(
-        (
-          k,
-          v
-        ) => CloudProvider.secretFields(r.provider).exists(_._1 == k) && v.nonEmpty
+      sec = r.secrets.map(_.view.mapValues(_.trim).filter((k, v) =>
+        CloudProvider.secretFields(r.provider).exists(_._1 == k) && v.nonEmpty
       ).toMap)
       _ <- Either.cond(!creating || sec.isDefined, (), "秘密の値を入れてください")
       _ <- sec.flatMap(m =>
-        CloudProvider.secretFields(r.provider).find(
-          (
-            k,
-            _,
-            req
-          ) => req && !m.contains(k)
-        ).map(
-          (
-            _,
-            label,
-            _
-          ) => s"${label}を入れてください"
+        CloudProvider.secretFields(r.provider).find((k, _, req) => req && !m.contains(k)).map((_, label, _) =>
+          s"${label}を入れてください"
         )
       ).toLeft(())
       _ <- Either.cond(sec.forall(_.values.forall(_.length <= 20000)), (), "秘密の値が長すぎます")
@@ -710,10 +527,7 @@ final class AdminRoutes(
    * クラウドの資格情報を保存する. 保存する前に認証できるか確かめる（秘密を入れ直さないときは、保存してある秘密で確かめる）.
    * 確かめた結果（だれとして認証されたか）は identity で返す.
    */
-  private def saveCloud(
-    id: Option[UUID],
-    r: CloudCredentialReq
-  ): IO[Response[IO]] =
+  private def saveCloud(id: Option[UUID], r: CloudCredentialReq): IO[Response[IO]] =
     valid(checkCloud(r, id.isEmpty)) { x =>
       val probe = CloudCredentialDto(
         id.getOrElse(ProbeId),
@@ -732,10 +546,7 @@ final class AdminRoutes(
         id.flatTraverse(i => config.cloudSecret(i).map(_.flatMap(e => box.flatMap(_.decrypt(e))))),
         clouds.probe(probe, _),
         // AWS は確かめで分かったアカウント ID を覚える（S3 を自分のアカウントのバケットに限るため. 分からなければ保存しない）
-        (
-          enc,
-          who
-        ) =>
+        (enc, who) =>
           (x.provider, clouds.accountIdOf(who)) match {
             case (CloudProvider.Aws, None) => IO.pure(Left(s"AWS のアカウント ID を確かめられませんでした（$who）"))
             case (_, acct) =>
@@ -746,11 +557,7 @@ final class AdminRoutes(
     }
 
   /** リポジトリの確認（結び付ける共有アカウントがあること）. */
-  private def validRepo(
-    r: RepositoryReq
-  )(
-    f: RepositoryReq => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def validRepo(r: RepositoryReq)(f: RepositoryReq => IO[Response[IO]]): IO[Response[IO]] =
     valid(checkRepo(r))(x =>
       x.accountId.fold(f(x))(id =>
         config.gitAccountWithToken(id).flatMap {
@@ -765,9 +572,7 @@ final class AdminRoutes(
     )
 
   /** 共有アカウントの秘密を送ってよい git のホスト（None は決まらない: そのほか・API の URL のない Forgejo）. */
-  private def accountHost(
-    a: GitAccountDto
-  ): Option[String] = {
+  private def accountHost(a: GitAccountDto): Option[String] = {
     val api = skakapo.agent.GitAuth.origin(a.apiUrl)
     a.provider match {
       case GitProvider.Github => Some(api.filter(_ != "https://api.github.com").getOrElse("https://github.com"))
@@ -779,23 +584,14 @@ final class AdminRoutes(
   }
 
   /** APP_SECRET で暗号化する（なければ保存できない）. */
-  private def encrypt(
-    v: String,
-    what: String
-  ): Either[String, String] =
+  private def encrypt(v: String, what: String): Either[String, String] =
     box.toRight(s"APP_SECRET が未設定のため、$what を保存できません").map(_.encrypt(v))
 
   /** 保存の結果: 失敗（重なりなど）は 409、新しく作ったら 201、更新なら 200. */
-  private def saved[A: _root_.io.circe.Encoder](
-    id: Option[UUID]
-  )(
-    result: IO[Either[String, A]]
-  ): IO[Response[IO]] =
+  private def saved[A: _root_.io.circe.Encoder](id: Option[UUID])(result: IO[Either[String, A]]): IO[Response[IO]] =
     result.flatMap(_.fold(err(ErrorCode.AdminSaveConflict, _), a => if id.isEmpty then Created(a) else Ok(a)))
 
-  private def checkType(
-    r: RequestTypeReq
-  ): Either[String, RequestTypeReq] =
+  private def checkType(r: RequestTypeReq): Either[String, RequestTypeReq] =
     for {
       _ <- Either.cond(Keys.requestType.matches(r.key), (), "キーは英小文字で始まる英小文字・数字・_ -（32文字まで）にしてください")
       l <- Check.name(r.label, "表示名")
@@ -806,10 +602,7 @@ final class AdminRoutes(
     } yield r.copy(label = l, fields = fs)
 
   /** None は変えない、Some("") は消す、それ以外は暗号化する（APP_SECRET がなければ保存できない）. */
-  private def secretField(
-    v: Option[String],
-    what: String
-  ): Either[String, Option[String]] = v.map(_.trim) match {
+  private def secretField(v: Option[String], what: String): Either[String, Option[String]] = v.map(_.trim) match {
     case None => Right(None)
     case Some(s) if s.isEmpty => Right(Some(""))
     case Some(s) => encrypt(s, what).map(Some(_))
@@ -819,68 +612,56 @@ final class AdminRoutes(
    * サービスを保存する. エージェント専用アカウントのキーを新しく入れたら、MCP のツールの一覧を読めるかで確かめ、
    * 読めたツールをシステムとして覚える（だれも連携していなくても、エージェントが使えるように）.
    */
-  private def saveService(
-    id: Option[UUID],
-    r: ServiceReq
-  ): IO[Response[IO]] = id.flatTraverse(config.service).flatMap { before =>
-    val newAgentToken = r.agentToken.map(_.trim).filter(_.nonEmpty)
-    def host(
-      u: String
-    ) = skakapo.agent.GitAuth.origin(u)
-    // 送り先（MCP・トークンの URL）を変えたのに秘密を入れ直さないときは断る（保存してある秘密を別のホストへ送らせない）
-    val moved = before.flatMap { b =>
-      if b.hasAgentToken && r.agentToken.isEmpty && host(b.mcpUrl) != host(r.mcpUrl) then
-        Some("MCP の URL を変えたときは、エージェント専用アカウントのキーを入れ直してください")
-      else if b.hasSecret && r.secret.isEmpty && host(b.oauth.tokenUrl) != host(r.oauth.tokenUrl) then
-        Some("トークンの URL を変えたときは、シークレットを入れ直してください")
-      else None
-    }
-    val check: IO[Either[String, Unit]] = newAgentToken.fold(IO.pure(Right(()))) { t =>
-      val probe = ServiceDto(
-        id.getOrElse(ProbeId),
-        r.key,
-        r.name,
-        r.kind,
-        r.baseUrl,
-        r.mcpUrl,
-        "",
-        "",
-        r.oauth,
-        false,
-        false,
-        true,
-        0
-      )
-      conns.probe(probe, t).map(_.bimap(e => s"エージェント専用アカウントのキーで ${r.name} の MCP に接続できませんでした: $e", _ => ()))
-    }
-    valid(moved.toLeft(()).flatMap(_ =>
-      (secretField(r.secret, "シークレット"), secretField(r.agentToken, "エージェント専用アカウントのキー")).tupled
-    )) {
-      (
-        sec,
-        agent
-      ) =>
-        check.flatMap(valid(_) { _ =>
-          // 保存したら、専用アカウントのツールの一覧を忘れる. 新しいキーなら読んで覚え直す.
-          // 送り先（MCP・トークン・サービスの URL）のホストが変わったら、利用者の連携を全員分外す（利用者のトークンを新しい送り先へ送らない）
-          val hostsMoved = before.exists(b =>
-            host(b.mcpUrl) != host(r.mcpUrl) || host(b.oauth.tokenUrl) != host(r.oauth.tokenUrl) ||
-              host(b.baseUrl) != host(r.baseUrl)
-          )
-          saved(id)(config.saveService(id, r, sec, agent).flatMap(_.flatTraverse(sid =>
-            ((if hostsMoved then conns.disconnectAll(sid) else conns.forget(conns.AgentKey, sid)) *>
-              config.service(sid))
-              .flatTap(s =>
-                (s, newAgentToken).tupled.traverse_(
-                  (
-                    s,
-                    t
-                  ) => conns.learnTools(s, t).attempt.void
+  private def saveService(id: Option[UUID], r: ServiceReq): IO[Response[IO]] =
+    id.flatTraverse(config.service).flatMap { before =>
+      val newAgentToken = r.agentToken.map(_.trim).filter(_.nonEmpty)
+      def host(u: String) = skakapo.agent.GitAuth.origin(u)
+      // 送り先（MCP・トークンの URL）を変えたのに秘密を入れ直さないときは断る（保存してある秘密を別のホストへ送らせない）
+      val moved = before.flatMap { b =>
+        if b.hasAgentToken && r.agentToken.isEmpty && host(b.mcpUrl) != host(r.mcpUrl) then
+          Some("MCP の URL を変えたときは、エージェント専用アカウントのキーを入れ直してください")
+        else if b.hasSecret && r.secret.isEmpty && host(b.oauth.tokenUrl) != host(r.oauth.tokenUrl) then
+          Some("トークンの URL を変えたときは、シークレットを入れ直してください")
+        else None
+      }
+      val check: IO[Either[String, Unit]] = newAgentToken.fold(IO.pure(Right(()))) { t =>
+        val probe = ServiceDto(
+          id.getOrElse(ProbeId),
+          r.key,
+          r.name,
+          r.kind,
+          r.baseUrl,
+          r.mcpUrl,
+          "",
+          "",
+          r.oauth,
+          false,
+          false,
+          true,
+          0
+        )
+        conns.probe(probe, t).map(_.bimap(e => s"エージェント専用アカウントのキーで ${r.name} の MCP に接続できませんでした: $e", _ => ()))
+      }
+      valid(moved.toLeft(()).flatMap(_ =>
+        (secretField(r.secret, "シークレット"), secretField(r.agentToken, "エージェント専用アカウントのキー")).tupled
+      )) {
+        (sec, agent) =>
+          check.flatMap(valid(_) { _ =>
+            // 保存したら、専用アカウントのツールの一覧を忘れる. 新しいキーなら読んで覚え直す.
+            // 送り先（MCP・トークン・サービスの URL）のホストが変わったら、利用者の連携を全員分外す（利用者のトークンを新しい送り先へ送らない）
+            val hostsMoved = before.exists(b =>
+              host(b.mcpUrl) != host(r.mcpUrl) || host(b.oauth.tokenUrl) != host(r.oauth.tokenUrl) ||
+                host(b.baseUrl) != host(r.baseUrl)
+            )
+            saved(id)(config.saveService(id, r, sec, agent).flatMap(_.flatTraverse(sid =>
+              ((if hostsMoved then conns.disconnectAll(sid) else conns.forget(conns.AgentKey, sid)) *>
+                config.service(sid))
+                .flatTap(s =>
+                  (s, newAgentToken).tupled.traverse_((s, t) => conns.learnTools(s, t).attempt.void)
                 )
-              )
-              .map(_.toRight("サービスが見つかりません"))
-          )))
-        })
+                .map(_.toRight("サービスが見つかりません"))
+            )))
+          })
+      }
     }
-  }
 }

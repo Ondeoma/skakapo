@@ -6,12 +6,7 @@ import skakapo.shared.*
 object Defaults {
 
   /** sBirds シリーズ（URL と OAuth のクライアントは、管理者が環境に合わせて入れる. 入れるまでは無効）. */
-  final case class ServiceSeed(
-    key: String,
-    name: String,
-    kind: String,
-    description: String,
-    mcp: Boolean = true)
+  final case class ServiceSeed(key: String, name: String, kind: String, description: String, mcp: Boolean = true)
 
   val services: List[ServiceSeed] = List(
     ServiceSeed("skea", "skea", ServiceKind.Sbirds, "プロジェクト管理（タスク・ボード・スプリント・ヘルプデスク）。不具合や依頼の起票先。"),
@@ -29,10 +24,7 @@ object Defaults {
   )
 
   /** sBirds シリーズの OAuth の入口（各サービスで共通）. */
-  def oauthFor(
-    seed: ServiceSeed,
-    baseUrl: String
-  ): OAuthConfig =
+  def oauthFor(seed: ServiceSeed, baseUrl: String): OAuthConfig =
     if (seed.kind == ServiceKind.Github)
       OAuthConfig("https://github.com/login/oauth/authorize", "https://github.com/login/oauth/access_token", "", "repo")
     else if (baseUrl.nonEmpty)
