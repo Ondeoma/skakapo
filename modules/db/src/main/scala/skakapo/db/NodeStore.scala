@@ -1,5 +1,6 @@
 package skakapo.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -27,7 +28,7 @@ final class NodeStore(xa: Transactor[IO]) extends TxStore(xa) {
    */
   def someoneIdler(name: String, active: Int, slots: Int): IO[Boolean] = tx(
     (fr"""select exists (select 1 from node where name <> $name and active < slots and seen_at >""" ++
-      Sql.AliveWindow ++
+      NodeSql.AliveWindow ++
       fr"""and active::float / slots < ${active.toDouble / slots})""").query[Boolean].unique
   )
 
@@ -40,7 +41,7 @@ final class NodeStore(xa: Transactor[IO]) extends TxStore(xa) {
   def stats: IO[StatsDto] = tx(
     for {
       nodes <-
-      (fr"select name, version, slots, active, started_at, seen_at, seen_at >" ++ Sql.AliveWindow ++
+      (fr"select name, version, slots, active, started_at, seen_at, seen_at >" ++ NodeSql.AliveWindow ++
         fr"from node order by name").query[(String, String, Int, Int, Instant, Instant, Boolean)].to[List]
       q <-
         sql"select count(*) filter (where status = 'queued'), count(*) filter (where status = 'running') from run where status in ('queued', 'running')"

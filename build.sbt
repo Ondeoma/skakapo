@@ -29,9 +29,11 @@ lazy val libSharedJS = ProjectRef(sbirdsLib, "sharedJS")
 lazy val libObserve = ProjectRef(sbirdsLib, "observe")
 lazy val libAuth = ProjectRef(sbirdsLib, "auth")
 lazy val libHttp = ProjectRef(sbirdsLib, "http")
+lazy val libMcp = ProjectRef(sbirdsLib, "mcp")
 lazy val libPush = ProjectRef(sbirdsLib, "push")
 lazy val libWeb = ProjectRef(sbirdsLib, "web")
 lazy val libDevidp = ProjectRef(sbirdsLib, "devidp")
+lazy val libDb = ProjectRef(sbirdsLib, "db")
 
 lazy val commonTest = Seq(
   libraryDependencies ++= Seq(
@@ -73,7 +75,7 @@ lazy val core = (project in file("modules/core"))
   .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % ceV)
 
 lazy val db = (project in file("modules/db"))
-  .dependsOn(core, libObserve)
+  .dependsOn(core, libObserve, libDb)
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
@@ -114,7 +116,7 @@ lazy val agent = (project in file("modules/agent"))
   )
 
 lazy val api = (project in file("modules/api"))
-  .dependsOn(core, db, auth, agent, shared.jvm, libObserve, libHttp, libPush, devidp % "test->compile")
+  .dependsOn(core, db, auth, agent, shared.jvm, libObserve, libHttp, libMcp, libPush, devidp % "test->compile")
   .settings(commonTest)
   .settings(
     libraryDependencies ++= http4sServer

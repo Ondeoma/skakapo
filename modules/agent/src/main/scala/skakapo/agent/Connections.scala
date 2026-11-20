@@ -116,6 +116,8 @@ final class Connections(config: ConfigStore,
       case Some((_, sid, verifier, back)) =>
         (config.service(sid), config.serviceSecret(sid)).flatMapN {
           case (None, _) => IO.pure(Left("サービスが見つかりません"))
+          // 連携の途中で管理者が無効にしたサービスには、認可コードを送らない（トークンも保存しない）
+          case (Some(s), _) if !s.enabled => IO.pure(Left("このサービスは無効です"))
           case (Some(s), enc) =>
             needBox match {
               case Left(e) => IO.pure(Left(e))

@@ -1,5 +1,6 @@
 package skakapo.api
 
+import sbirds.shared.SafePath
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.Json
@@ -69,9 +70,11 @@ final class ConnectionRoutes(conns: Connections, store: ConnectionStore, config:
               case Left(e) => page(ErrorCode.ConnectionFailed, e)
               case Right((s, back)) =>
                 sbirds.observe.Metrics.count("skakapo.connections.created", "service" -> s.key, "via" -> "oauth") *>
-                  IO.pure(Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(
-                    back + (if back.contains("?") then "&" else "?") + s"connected=${s.key}"
-                  ))))
+                  // SafePath は % を通すので、URL として読めない戻り先は連携の画面に戻す
+                  IO.pure(Response[IO](Status.Found).putHeaders(Location(
+                    Uri.fromString(back + (if back.contains("?") then "&" else "?") + s"connected=${s.key}")
+                      .getOrElse(Uri.unsafeFromString(s"/connections?connected=${s.key}"))
+                  )))
             }
           case _ => page(ErrorCode.ConnectionCallbackIncomplete)
         }

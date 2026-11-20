@@ -1,5 +1,6 @@
 package skakapo.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -128,9 +129,12 @@ final class SessionStore(xa: Transactor[IO]) extends TxStore(xa) {
   // ---------------------------------------------------------------- 添付したファイル
 
   private def linkC(sessionId: UUID, userId: UUID, attachments: List[AttachmentDto]): ConnectionIO[Unit] =
-    attachments.traverse_(a =>
-      sql"update attachment set session_id = $sessionId where id = ${a.id} and user_id = $userId and session_id is null".update.run
-    )
+    if attachments.isEmpty then ().pure[ConnectionIO]
+    else
+      sql"""update attachment set session_id = $sessionId
+            where id = any(${attachments.map(
+          _.id
+        ).toArray}) and user_id = $userId and session_id is null""".update.run.void
 
   def saveAttachment(userId: UUID, name: String, contentType: String, data: Array[Byte]): IO[AttachmentDto] = tx {
     val id = UUID.randomUUID()

@@ -2,6 +2,7 @@ package skakapo.api
 
 import cats.effect.*
 import org.http4s.*
+import sbirds.http.RateLimitConfig
 import skakapo.db.*
 import skakapo.shared.*
 

@@ -80,6 +80,7 @@ enum ErrorCode(val code: String, val status: Int, val message: String) extends s
   case AvatarTypeUnsupported extends ErrorCode("SKAKAPO-5104", 415, "PNG・JPEG・GIF・WebP の画像を選んでください")
   case AvatarNotFound extends ErrorCode("SKAKAPO-5105", 404, "アイコンがありません")
   case Unexpected extends ErrorCode("SKAKAPO-9001", 500, "サーバーでエラーが発生しました")
+  case McpToolFailed extends ErrorCode("SKAKAPO-9002", 500, "MCP のツールの実行に失敗しました")
   case DatabaseNotReady extends ErrorCode("SKAKAPO-9101", 500, "データベースに接続できません")
   case HealthCheckFailed extends ErrorCode("SKAKAPO-9102", 500, "ヘルスチェックでデータベースに接続できません")
   case PurgeFailed extends ErrorCode("SKAKAPO-9201", 500, "期限の切れたデータの削除に失敗しました")

@@ -1,5 +1,6 @@
 package skakapo.api
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.anthropic.core.ObjectMappers

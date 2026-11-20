@@ -174,7 +174,7 @@ docker build -f deploy/docker/app.Dockerfile -t skakapo .
 | `BIND_HOST` | 待ち受けるアドレス（既定 `0.0.0.0`。`DEV_LOGIN` のときは既定 `127.0.0.1`） |
 | `NODE_NAME` | このノードの名前（既定 ホスト名） |
 | `APP_SECRET` | 連携のトークン・OAuth のクライアントのシークレットを暗号化する鍵（16文字以上。全ノードで同じ値にする。連携を使うときは必須） |
-| `RATE_LIMIT_AUTH` / `RATE_LIMIT_PUBLIC` | IP ごとの1分あたりの回数の上限（ログイン 既定 20・公開の API 既定 120）。0 で制限しない |
+| `RATE_LIMIT_AUTH` / `RATE_LIMIT_PUBLIC` | IP ごとの1分あたりの回数の上限（ログイン `/auth/…` 既定 20・公開の API `/api/public/…` 既定 120）。0 で制限しない |
 | `TRUSTED_PROXIES` | リバースプロキシの IP か CIDR（カンマ区切り）。そこから来た要求だけ `X-Forwarded-For` から利用者の IP を読む |
 | `STATIC_DIR` | ビルド済みの画面（`dist/static`） |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` | ログ・メトリクス・トレースの送り先（skorimako の URL と `Authorization=Bearer sko_…`（ingest のキー））。未設定なら送らない |

@@ -1,5 +1,6 @@
 package skakapo.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -74,17 +75,6 @@ final class UserStore(xa: Transactor[IO]) extends TxStore(xa) {
 
   def findC(id: UUID)
     : ConnectionIO[Option[User]] = (fr"select" ++ cols ++ fr"from app_user where id = $id").query[User].option
-
-  /** メールアドレス・ID で1人を決める（共有の相手の指定）. */
-  def resolve(s: String): IO[Option[User]] = tx {
-    val t = s.trim
-    scala.util.Try(UUID.fromString(t)).toOption match {
-      case Some(id) => findC(id)
-      case None => (fr"select" ++ cols ++
-          fr"from app_user where not disabled and lower(email) = lower($t) order by last_login_at desc nulls last limit 1")
-          .query[User].option
-    }
-  }
 
   def updateMe(id: UUID,
                name: Option[String],

@@ -76,10 +76,21 @@ final class Runner(sessions: SessionStore,
    * （利用者のトークンは、リポジトリのホストが GitHub のサービスのホストと同じときだけ使う. ほかのホストへ送らない）.
    */
   private def repoCreds(repos: List[RepositoryDto], github: Option[(ServiceDto, String)]): IO[Map[String, RepoCreds]] =
+    // 共有アカウントは、リポジトリごとではなくアカウントごとに1回だけ読む
+    repos.flatMap(
+      _.accountId
+    ).distinct.traverse(id => config.gitAccountWithToken(id).map(id -> _)).map(_.toMap).flatMap {
+      accounts => repoCredsWith(repos, github, accounts)
+    }
+
+  private def repoCredsWith(
+    repos: List[RepositoryDto],
+    github: Option[(ServiceDto, String)],
+    accounts: Map[java.util.UUID, Option[(GitAccountDto, String)]]): IO[Map[String, RepoCreds]] =
     repos.traverse { r =>
       r.accountId match {
         case Some(id) =>
-          config.gitAccountWithToken(id).map(_.flatMap {
+          IO.pure(accounts.get(id).flatten).map(_.flatMap {
             (a, enc) =>
               box.flatMap(_.decrypt(enc)).map { secret =>
                 val api = GitHosts.apiFor(a.provider, a.apiUrl, r.url)
@@ -268,7 +279,7 @@ final class Runner(sessions: SessionStore,
         val model = Option(m.model().asString()).filter(_.nonEmpty).getOrElse(a.model)
         val cost = Models.cost(model, t.inputTokens, t.outputTokens, t.cacheReadTokens, t.cacheWriteTokens)
         guarded(append(m.toParam())) {
-          for
+          for {
             _ <- sessions.addUsage(
               r.id,
               s.userId,
@@ -356,7 +367,7 @@ final class Runner(sessions: SessionStore,
                 fail(s, msg)
               case _ => IO.pure((RunStatus.Done, None))
             }
-          yield res
+          } yield res
         }
     }
   }

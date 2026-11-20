@@ -1,15 +1,13 @@
 package skakapo.app
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.comcast.ip4s.*
 import doobie.implicits.*
-import fs2.io.file.Path
 import org.http4s.*
-import org.http4s.dsl.io.*
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.staticcontent.*
 import skakapo.agent.*
 import skakapo.api.*
 import sbirds.auth.{OidcClient, OidcConfig}
@@ -18,7 +16,7 @@ import skakapo.db.*
 import sbirds.observe.{HttpClientTelemetry, HttpTelemetry, Log, Metrics, RumRoutes, Telemetry}
 import sbirds.push.{PushService, PushStore}
 import skakapo.core.ErrorCode
-import sbirds.http.Errors
+import sbirds.http.{Errors, Health, SecurityHeaders, Spa}
 
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
@@ -126,10 +124,13 @@ object Main extends IOApp.Simple {
             creditStore
           ).routes
         all = ApiRoutes(oidc, users, sess, cfg.api, routes, Some(pushStore -> push)) <+>
-          healthRoutes(xa) <+> RumRoutes.routes <+> web.getOrElse(HttpRoutes.empty[IO])
+          Health.routes(Database.ping(xa), "ok", e => Log.report(ErrorCode.HealthCheckFailed, "", e)) <+>
+          RumRoutes.routes <+> web.getOrElse(HttpRoutes.empty[IO])
         // セキュリティのヘッダーは、見つからない 404・内部エラーの 500 にも付ける
         httpApp <- HttpTelemetry(
-          SecurityHeaders.app(Errors.handle(all.orNotFound, ErrorCode.Unexpected), cfg.api.cookieSecure),
+          SecurityHeaders.app(SecurityHeaders.Policy(hsts = SecurityHeaders.hsts(cfg.api.cookieSecure)))(
+            Errors.handle(all.orNotFound, ErrorCode.Unexpected)
+          ),
           List("/api", "/auth", "/mcp"),
           sbirds.http.RateLimit.clientIp(_, cfg.api.rateLimit.trustedProxies)
         )
@@ -153,18 +154,6 @@ object Main extends IOApp.Simple {
         Log.report(ErrorCode.DatabaseNotReady, s"${e.getMessage.take(120)}; retry $attempt/60") *>
           IO.sleep(2.seconds) *> migrateWithRetry(cfg, attempt + 1)
     }
-
-  private def healthRoutes(xa: doobie.Transactor[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case GET -> Root / "healthz" =>
-      sql"select 1".query[Int].unique.transact(xa).timeout(3.seconds).attempt.flatMap {
-        case Right(_) => IO.pure(TextResponse(Status.Ok, "ok"))
-        case Left(e) => Log.report(
-            ErrorCode.HealthCheckFailed,
-            "",
-            e
-          ).as(TextResponse(Status.ServiceUnavailable, "database unavailable"))
-      }
-  }
 
   /** DB から定期的に読むメトリクス（skorimako のダッシュボード・アラート用）. */
   private def gauges(xa: doobie.Transactor[IO]): Resource[IO, Unit] = {
@@ -192,9 +181,10 @@ object Main extends IOApp.Simple {
       )(q(sql"select count(*) from run where status = 'failed' and finished_at > now() - interval '24 hours'")),
       Metrics.gauge("skakapo.connections.total", "利用者が連携しているサービスの数")(q(sql"select count(*) from connection")),
       Metrics.gauge("skakapo.nodes.alive", "動いているノードの数", 30.seconds)(q(fr"select count(*) from node where seen_at >" ++
-        Sql.AliveWindow)),
+        NodeSql.AliveWindow)),
       Metrics.gauge("skakapo.nodes.free_slots", "動いているノードの空きの数（足りなければノードを足す）", 15.seconds)(
-        q(fr"select coalesce(sum(greatest(slots - active, 0)), 0)::bigint from node where seen_at >" ++ Sql.AliveWindow)
+        q(fr"select coalesce(sum(greatest(slots - active, 0)), 0)::bigint from node where seen_at >" ++
+          NodeSql.AliveWindow)
       ),
       Metrics.gauge("sbirds.push.subscriptions", "プッシュ通知を受け取る端末の数")(q(sql"select count(*) from push_subscription"))
     ).sequence_
@@ -227,12 +217,10 @@ object Main extends IOApp.Simple {
    * http の開発環境でも出るよう IdP のオリジンも足す. Service Worker・manifest は自分のサイトなので default-src で足りる.
    */
   def spaCsp(indexHtml: String, rum: Option[String] = RumRoutes.origin, idp: Option[String] = None): String = {
-    val inline = "(?s)<script>(.*?)</script>".r.findAllMatchIn(indexHtml).map(m =>
-      s"'sha256-${java.util.Base64.getEncoder.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(m.group(1).getBytes("UTF-8")))}'"
-    )
+    val inline = Spa.inlineScriptHashes(indexHtml)
     (List(
       "default-src 'self'",
-      ("script-src 'self'" :: inline.toList ++ rum.toList).mkString(" "),
+      ("script-src 'self'" :: inline ++ rum.toList).mkString(" "),
       "style-src 'self' 'unsafe-inline'",
       ("img-src 'self' data: blob: https:" :: idp.toList).mkString(" "),
       ("connect-src 'self'" :: rum.toList).mkString(" "),
@@ -243,27 +231,20 @@ object Main extends IOApp.Simple {
     )).mkString("; ")
   }
 
-  /** ビルド済みの画面の配信. 存在しないパスは index.html（SPA）. */
   /** IdP の issuer の URL のオリジン（例: http://localhost:8081）. */
   def idpOrigin(issuer: String): Option[String] = scala.util.Try(java.net.URI.create(issuer)).toOption
     .filter(u => u.getScheme != null && u.getHost != null)
     .map(u => s"${u.getScheme}://${u.getHost}" + (if u.getPort >= 0 then s":${u.getPort}" else ""))
 
+  /** ビルド済みの画面の配信（画面の CSP を付ける）. 存在しないパスは index.html（SPA）. */
   private def spa(dir: String, idp: Option[String]): IO[HttpRoutes[IO]] =
-    IO.blocking(java.nio.file.Files.readString(java.nio.file.Path.of(dir, "index.html"))).map(spaRoutes(dir, _, idp))
-
-  private def spaRoutes(dir: String, indexHtml: String, idp: Option[String]): HttpRoutes[IO] = {
-    val csp = spaCsp(indexHtml, idp = idp)
-    val files = fileService[IO](FileService.Config(dir))
-    val index = HttpRoutes.of[IO] {
-      case req @ GET -> path
-          if !path.segments.headOption.map(_.decoded()).exists(Set("api", "auth", "mcp", "healthz")) =>
-        StaticFile.fromPath(Path(dir) / "index.html", Some(req)).getOrElseF(Errors.respond(ErrorCode.PageNotFound))
+    Spa.indexHtml(dir).map { indexHtml =>
+      val csp = spaCsp(indexHtml, idp = idp)
+      Spa.routes(
+        dir,
+        Spa.firstSegment("api", "auth", "mcp", "healthz"),
+        notFound = Errors.respond(ErrorCode.PageNotFound),
+        finish = (_, r) => r.putHeaders("Content-Security-Policy" -> csp)
+      )
     }
-    HttpRoutes[IO] { req =>
-      val cc =
-        if req.pathInfo.renderString.startsWith("/assets/") then "public, max-age=31536000, immutable" else "no-cache"
-      (files <+> index).run(req).map(_.putHeaders("Cache-Control" -> cc, "Content-Security-Policy" -> csp))
-    }
-  }
 }

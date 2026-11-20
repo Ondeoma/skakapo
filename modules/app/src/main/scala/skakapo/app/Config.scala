@@ -1,23 +1,16 @@
 package skakapo.app
 
+import sbirds.http.Env.*
+import sbirds.db.*
 import cats.effect.*
-import cats.syntax.all.*
 import com.comcast.ip4s.*
 import skakapo.api.*
 import sbirds.auth.OidcConfig
-import skakapo.db.*
 
 import scala.concurrent.duration.*
 
 /** 設定は環境変数から読む. */
 object Config {
-  private def opt(name: String): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
-  private def int(name: String): Option[Int] = opt(name).flatMap(_.toIntOption)
-  private def enabled(name: String): Boolean = opt(name).exists(_.equalsIgnoreCase("true"))
-  private def required(name: String): Either[String, String] = opt(name).toRight(s"環境変数 $name を設定してください")
-  private def list(name: String): List[String] =
-    opt(name).toList.flatMap(_.split(Array(',', ' ')).map(_.trim).filter(_.nonEmpty))
-
   private def local(url: String): Boolean =
     scala.util.Try(java.net.URI.create(url).getHost).toOption.flatMap(Option(_)).map(_.toLowerCase)
       .exists(h => Set("localhost", "127.0.0.1", "[::1]").contains(h) || h.endsWith(".localhost"))
@@ -51,9 +44,7 @@ object Config {
         case (None, None, None) if devLogin => Right(None)
         case _ => Left("OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を設定してください（開発中は DEV_LOGIN=true で省略できます）")
       }
-      proxies <- list("TRUSTED_PROXIES").traverse(s =>
-        RateLimitConfig.proxy(s).toRight(s"TRUSTED_PROXIES の「$s」は IP か CIDR で書いてください")
-      )
+      rate <- sbirds.http.RateLimitConfig.fromEnv()
       secret <- opt("APP_SECRET") match {
         case Some(s) if s.length < 16 => Left("APP_SECRET は16文字以上にしてください")
         case s => Right(s)
@@ -89,7 +80,7 @@ object Config {
         adminGroups = list("ADMIN_GROUPS").toSet,
         agentReady = sys.env.get("ANTHROPIC_API_KEY").exists(_.trim.nonEmpty),
         rateLimit =
-          RateLimitConfig(int("RATE_LIMIT_AUTH").getOrElse(20), int("RATE_LIMIT_PUBLIC").getOrElse(120), proxies)
+          rate
       ),
       staticDir = opt("STATIC_DIR"),
       appSecret = secret,
