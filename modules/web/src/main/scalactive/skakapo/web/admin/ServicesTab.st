@@ -18,7 +18,7 @@ def initState() = State()
 
 def mounted(s: State): Unit = load(s)
 
-def load(s: State): Unit = Store.report(Api.adminServices())(xs => s.list := xs)
+def load(s: State): Unit = Toasts.report(Api.adminServices())(xs => s.list := xs)
 
 def open(s: State, x: Option[ServiceDto]): Unit = {
   val d = x.getOrElse(ServiceDto(new UUID(0L, 0L), "", "", ServiceKind.Sbirds, "", "", "", "", OAuthConfig(), false, true, true, s.list.v.size + 1))
@@ -55,14 +55,14 @@ def save(s: State, e: Edit): Unit =
 
 /** 保存した秘密を削除する（secret か agentToken の片方を Some("") にして保存する）. */
 private def clear(s: State, e: Edit, message: String, secret: Option[String], agentToken: Option[String]): Unit = Dialog.confirm(message, "削除") {
-  e.id.foreach(id => Store.report(Api.saveService(Some(id), req(e, secret, agentToken)))(_ => { s.edit := None; load(s) }))
+  e.id.foreach(id => Toasts.report(Api.saveService(Some(id), req(e, secret, agentToken)))(_ => { s.edit := None; load(s) }))
 }
 def clearSecret(s: State, e: Edit): Unit = clear(s, e, "OAuth のクライアントのシークレットを削除しますか？（OAuth で連携できなくなります）", Some(""), None)
 def clearAgentToken(s: State, e: Edit): Unit =
   clear(s, e, "エージェント専用アカウントのキーを削除しますか？（連携していない利用者の依頼では、このサービスを使えなくなります）", None, Some(""))
 
 def remove(s: State, x: ServiceDto): Unit = Dialog.confirm(s"${x.name} を削除しますか？（利用者の連携も削除されます）", "削除") {
-  Store.report(Api.deleteService(x.id))(_ => load(s))
+  Toasts.report(Api.deleteService(x.id))(_ => load(s))
 }
 
 def edits(s: State) = s.edit.mapC(_.toList)

@@ -15,12 +15,12 @@ def initState() = State()
 
 def mounted(s: State): Unit = {
   pageTitle("新しい依頼")
-  Store.report(Api.requestTypes()) { ts =>
+  Toasts.report(Api.requestTypes()) { ts =>
     s.types := ts
-    Query.get("type").flatMap(k => ts.find(_.key == k)).foreach(choose(s, _))
+    Router.query.v.get("type").flatMap(k => ts.find(_.key == k)).foreach(choose(s, _))
   }
-  Store.report(Api.connections())(cs => s.services := cs)
-  Store.report(Api.repositories())(rs => s.repos := rs)
+  Toasts.report(Api.connections())(cs => s.services := cs)
+  Toasts.report(Api.repositories())(rs => s.repos := rs)
 }
 
 def choose(s: State, t: RequestTypeDto): Unit = { s.chosen := Some(t); s.values := Map.empty; s.error := "" }

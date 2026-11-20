@@ -3,17 +3,17 @@ import skakapo.web.*
 import skakapo.shared.*
 
 // ノード（冗長構成）: どのノードが動いていて、いくつ実行を抱えているか. 実行は空いているノードが先に取る
-case class State(stats: RV[Option[StatsDto]] = RV(None), timer: RV[Option[Int]] = RV(None))
+case class State(stats: RV[Option[StatsDto]] = RV(None))
 
 def initState() = State()
 
 def mounted(s: State): Unit = {
   load(s)
-  s.timer := Some(org.scalajs.dom.window.setInterval(() => load(s), 10000))
+  useInterval(10000)(load(s))
+  ()
 }
-def unmounted(s: State): Unit = s.timer.v.foreach(org.scalajs.dom.window.clearInterval)
 
-def load(s: State): Unit = Store.report(Api.adminStats())(x => s.stats := Some(x))
+def load(s: State): Unit = Toasts.report(Api.adminStats())(x => s.stats := Some(x))
 def nodes(s: State) = s.stats.mapC(_.map(_.nodes).getOrElse(Nil))
 def summary(s: State) = s.stats.mapC(_.map(x => s"順番待ち ${x.queued}・作業中 ${x.running}・24時間の実行 ${x.runs24h}・24時間のトークン ${Fmt.tokens(x.tokens24h)}").getOrElse(""))
 def slots(n: NodeDto): String = s"${n.active} / ${n.slots}"

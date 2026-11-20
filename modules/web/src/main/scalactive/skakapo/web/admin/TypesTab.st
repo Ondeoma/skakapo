@@ -17,7 +17,7 @@ def initState() = State()
 
 def mounted(s: State): Unit = load(s)
 
-def load(s: State): Unit = Store.report(Api.adminRequestTypes())(xs => s.list := xs)
+def load(s: State): Unit = Toasts.report(Api.adminRequestTypes())(xs => s.list := xs)
 
 def row(f: FormField): Row = Row(RV(f.name), RV(f.label), RV(f.kind), RV(f.required), RV(f.options.mkString(", ")), RV(f.placeholder))
 
@@ -48,7 +48,7 @@ def save(s: State, e: Edit): Unit =
     e.position.v.toIntOption.getOrElse(0), e.enabled.v)), s.error) { s.edit := None; load(s) }
 
 def remove(s: State, x: RequestTypeDto): Unit = Dialog.confirm(s"「${x.label}」を削除しますか？（この種類の会話は残ります）", "削除") {
-  Store.report(Api.deleteRequestType(x.id))(_ => load(s))
+  Toasts.report(Api.deleteRequestType(x.id))(_ => load(s))
 }
 
 def edits(s: State) = s.edit.mapC(_.toList)

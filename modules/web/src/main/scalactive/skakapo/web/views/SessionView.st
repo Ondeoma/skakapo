@@ -19,7 +19,7 @@ def initState() = State()
 
 def mounted(s: State, props: Props): Unit = {
   pageTitle("会話")
-  Store.report(Api.session(props.sessionId)) { d =>
+  Toasts.report(Api.session(props.sessionId)) { d =>
     apply(s, d)
     scrollDown()
     poll(s, props)
@@ -78,7 +78,7 @@ def send(s: State, props: Props): Unit = {
     s.sending := true
     Api.say(props.sessionId, t, s.attach.ids).onComplete { r =>
       s.sending := false
-      r.fold(Store.error, _ => { s.text := ""; s.attach.clear(); s.session := s.session.v.map(_.copy(status = SessionStatus.Queued)) })
+      r.fold(Toasts.error, _ => { s.text := ""; s.attach.clear(); s.session := s.session.v.map(_.copy(status = SessionStatus.Queued)) })
     }
   }
 }
@@ -94,13 +94,13 @@ def key(s: State, props: Props, e: dom.Event): Unit = {
 def editTitle(s: State): Unit = { s.titleInput := s.session.v.map(_.title).getOrElse(""); s.editing := true }
 def saveTitle(s: State, props: Props): Unit = {
   val t = s.titleInput.v.trim
-  if (t.nonEmpty) Store.report(Api.renameSession(props.sessionId, t)) { _ =>
+  if (t.nonEmpty) Toasts.report(Api.renameSession(props.sessionId, t)) { _ =>
     s.session := s.session.v.map(_.copy(title = t, titleAuto = false)); pageTitle(t); s.editing := false; Store.refresh()
   }
 }
 def titleAuto(s: State) = s.session.mapC(_.exists(_.titleAuto))
 
-def stop(s: State, props: Props): Unit = Store.report(Api.cancel(props.sessionId))(_ => Store.toast("止めるよう頼みました"))
+def stop(s: State, props: Props): Unit = Toasts.report(Api.cancel(props.sessionId))(_ => Toasts.show("止めるよう頼みました"))
 
 def archive(s: State, props: Props): Unit = SessionActions.archive(props.sessionId, !s.session.v.exists(_.archived))(Store.go("/"))
 

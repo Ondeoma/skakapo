@@ -14,12 +14,12 @@ def initState() = State()
 def mounted(s: State): Unit = load(s)
 
 def load(s: State): Unit = {
-  Store.report(Api.adminSettings()) { d =>
+  Toasts.report(Api.adminSettings()) { d =>
     s.settings := Some(d)
     s.budget := d.agent.monthlyBudgetUsd.fold("")(amount)
     s.defaultCap := d.agent.defaultUserCapUsd.fold("")(amount)
   }
-  Store.report(Api.adminCredits()) { c =>
+  Toasts.report(Api.adminCredits()) { c =>
     s.used := c.used
     s.month := c.month
     s.users := c.users
@@ -34,11 +34,11 @@ def parse(v: String): Either[String, Option[Double]] =
 def saveLimits(s: State): Unit = s.settings.v.foreach { d =>
   (parse(s.budget.v), parse(s.defaultCap.v)) match {
     case (Right(b), Right(c)) =>
-      Store.report(Api.saveAdminSettings(AdminSettingsReq(d.agent.copy(monthlyBudgetUsd = b, defaultUserCapUsd = c), d.trackers))) { _ =>
-        Store.toast("保存しました"); load(s); Store.refresh()
+      Toasts.report(Api.saveAdminSettings(AdminSettingsReq(d.agent.copy(monthlyBudgetUsd = b, defaultUserCapUsd = c), d.trackers))) { _ =>
+        Toasts.show("保存しました"); load(s); Store.refresh()
       }
-    case (Left(e), _) => Store.toast(e, error = true)
-    case (_, Left(e)) => Store.toast(e, error = true)
+    case (Left(e), _) => Toasts.show(e, error = true)
+    case (_, Left(e)) => Toasts.show(e, error = true)
   }
 }
 
@@ -53,8 +53,8 @@ def saveCap(s: State, e: Edit): Unit = {
     case _         => parse(e.amount.v).flatMap(_.toRight("金額を入れてください")).map(v => UserCapReq(useDefault = false, Some(v)))
   }
   req match {
-    case Left(err) => Store.toast(err, error = true)
-    case Right(r) => Store.report(Api.setUserCap(e.user.user.id, r))(_ => { s.edit := None; load(s); Store.refresh() })
+    case Left(err) => Toasts.show(err, error = true)
+    case Right(r) => Toasts.report(Api.setUserCap(e.user.user.id, r))(_ => { s.edit := None; load(s); Store.refresh() })
   }
 }
 
@@ -84,7 +84,7 @@ def defaultText(s: State) = s.settings.mapC(_.flatMap(_.agent.defaultUserCapUsd)
         <thead><tr><th>利用者</th><th class="num">今月の使用</th><th>上限</th><th class="num">残り</th><th class="num">実行</th><th></th></tr></thead>
         <tbody>
           <tr v-for="u in s.users" class="click" @click="open(s, u)">
-            <td><span class="who"><Avatar :user="Some(u.user)" :size="22" /> {{ u.user.name }}</span></td>
+            <td><span class="who"><Avatar :user="Some(u.user.person)" :size="22" /> {{ u.user.name }}</span></td>
             <td class="num">{{ Usd.fmt(u.used) }}</td>
             <td>{{ capText(u) }}</td>
             <td class="num">{{ remainText(u) }}</td>

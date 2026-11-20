@@ -16,26 +16,26 @@ def initState() = State()
 def mounted(s: State): Unit = {
   pageTitle("連携")
   load(s)
-  Query.get("connected").foreach(k => Store.toast(s"$k と連携しました"))
+  Router.query.v.get("connected").foreach(k => Toasts.show(s"$k と連携しました"))
 }
 
-def load(s: State): Unit = Store.report(Api.connections())(xs => s.list := xs)
+def load(s: State): Unit = Toasts.report(Api.connections())(xs => s.list := xs)
 
-def oauth(c: ConnectionDto): Unit = Store.report(Api.connectOAuth(c.service.id, "/connections"))(url => dom.window.location.href = url)
+def oauth(c: ConnectionDto): Unit = Toasts.report(Api.connectOAuth(c.service.id, "/connections"))(url => dom.window.location.href = url)
 
 def saveToken(s: State): Unit = s.tokenFor.v.foreach { id =>
   s.busy := true
   Api.connectToken(id, s.token.v).onComplete { r =>
     s.busy := false
-    r.fold(Store.error, _ => { s.tokenFor := None; s.token := ""; Store.toast("連携しました"); load(s) })
+    r.fold(Toasts.error, _ => { s.tokenFor := None; s.token := ""; Toasts.show("連携しました"); load(s) })
   }
 }
 
 def disconnect(s: State, c: ConnectionDto): Unit = Dialog.confirm(s"${c.service.name} との連携をやめますか？（エージェントは ${c.service.name} を使えなくなります）", "やめる") {
-  Store.report(Api.disconnect(c.service.id))(_ => load(s))
+  Toasts.report(Api.disconnect(c.service.id))(_ => load(s))
 }
 
-def refresh(c: ConnectionDto): Unit = Store.report(Api.refreshTools(c.service.id))(n => Store.toast(s"${c.service.name} のツールを読み直しました（$n 個）"))
+def refresh(c: ConnectionDto): Unit = Toasts.report(Api.refreshTools(c.service.id))(n => Toasts.show(s"${c.service.name} のツールを読み直しました（$n 個）"))
 
 def kind(c: ConnectionDto): String = ServiceKind.label(c.service.kind)
 def via(c: ConnectionDto): String = c.via match {

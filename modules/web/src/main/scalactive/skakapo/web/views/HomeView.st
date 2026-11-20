@@ -19,7 +19,7 @@ def toggle(s: State): Unit = {
 }
 
 /** アーカイブ済みを見ているときは、その一覧を読み直す（いつもの一覧は Store.refresh で読み直る）. */
-def reload(s: State): Unit = if (s.archived.v) Store.report(Api.sessions(archived = true))(xs => s.old := xs)
+def reload(s: State): Unit = if (s.archived.v) Toasts.report(Api.sessions(archived = true))(xs => s.old := xs)
 
 def archive(s: State, x: SessionDto): Unit = SessionActions.archive(x.id, !x.archived)(reload(s))
 def remove(s: State, x: SessionDto): Unit = SessionActions.remove(x.id, x.title)(reload(s))

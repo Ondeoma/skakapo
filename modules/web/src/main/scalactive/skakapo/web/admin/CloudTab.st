@@ -17,8 +17,8 @@ def initState() = State()
 def mounted(s: State): Unit = load(s)
 
 def load(s: State): Unit = {
-  Store.report(Api.cloudCredentials())(xs => s.list := xs)
-  Store.report(Api.userGroups())(gs => s.userGroups := gs)
+  Toasts.report(Api.cloudCredentials())(xs => s.list := xs)
+  Toasts.report(Api.userGroups())(gs => s.userGroups := gs)
 }
 
 def open(s: State, x: Option[CloudCredentialDto]): Unit = {
@@ -40,7 +40,7 @@ def save(s: State, e: Edit): Unit =
     s.error, (c: CloudCredentialDto) => s"保存しました（${c.identity.getOrElse("認証できました")}）") { s.edit := None; load(s) }
 
 def remove(s: State, x: CloudCredentialDto): Unit = Dialog.confirm(s"${x.name} を削除しますか？（エージェントはこのクラウドを使えなくなります）", "削除") {
-  Store.report(Api.deleteCloudCredential(x.id))(_ => load(s))
+  Toasts.report(Api.deleteCloudCredential(x.id))(_ => load(s))
 }
 
 def summary(c: CloudCredentialDto): String =

@@ -16,7 +16,7 @@ case class State(model: RV[String] = RV(""), effort: RV[String] = RV("high"), ma
 
 def initState() = State()
 
-def mounted(s: State): Unit = Store.report(Api.adminSettings())(d => fill(s, d))
+def mounted(s: State): Unit = Toasts.report(Api.adminSettings())(d => fill(s, d))
 
 def fill(s: State, d: AdminSettingsDto): Unit = {
   val a = d.agent
@@ -38,11 +38,11 @@ def save(s: State): Unit = {
     s.trackers.v.map(t => TrackerSettings(t.name.v.trim, t.service.v.trim, t.project.v.trim, t.scope.v, t.notes.v, t.isDefault.v)))
   Api.saveAdminSettings(r).onComplete { x =>
     s.saving := false
-    x.fold(Store.error, d => { fill(s, d); Store.toast("保存しました"); s.prompt := None })
+    x.fold(Toasts.error, d => { fill(s, d); Toasts.show("保存しました"); s.prompt := None })
   }
 }
 
-def preview(s: State): Unit = Store.report(Api.adminPrompt())(t => s.prompt := Some(t))
+def preview(s: State): Unit = Toasts.report(Api.adminPrompt())(t => s.prompt := Some(t))
 def prompts(s: State) = s.prompt.mapC(_.toList)
 val vars: String = "{" + "{tracker.service}}・{" + "{tracker.project}}"
 </script>

@@ -18,8 +18,8 @@ def initState() = State()
 def mounted(s: State): Unit = load(s)
 
 def load(s: State): Unit = {
-  Store.report(Api.userGroups())(xs => s.groups := xs)
-  Store.report(Api.adminUsers())(xs => s.users := xs)
+  Toasts.report(Api.userGroups())(xs => s.groups := xs)
+  Toasts.report(Api.adminUsers())(xs => s.users := xs)
 }
 
 def open(s: State, x: Option[UserGroupDto]): Unit = {
@@ -33,12 +33,12 @@ def save(s: State, e: Edit): Unit =
     e.idpGroups.v.split(",").map(_.trim).filter(_.nonEmpty).toList, e.isDefault.v, e.position.v.toIntOption.getOrElse(0))), s.error) { s.edit := None; load(s) }
 
 def remove(s: State, x: UserGroupDto): Unit = Dialog.confirm(s"「${x.label}」を削除しますか？（この種類を付けた人は、IdP のグループ・既定で決まります）", "削除") {
-  Store.report(Api.deleteUserGroup(x.id))(_ => load(s))
+  Toasts.report(Api.deleteUserGroup(x.id))(_ => load(s))
 }
 
 /** 利用者に種類を付ける（空なら IdP のグループ・既定で決める）. */
 def assign(s: State, u: AdminUserDto, value: String): Unit =
-  Store.report(Api.assignGroup(u.user.id, Option(value).filter(_.nonEmpty).map(UUID.fromString)))(_ => { Store.toast("変えました"); load(s) })
+  Toasts.report(Api.assignGroup(u.user.id, Option(value).filter(_.nonEmpty).map(UUID.fromString)))(_ => { Toasts.show("変えました"); load(s) })
 
 def assignedValue(u: AdminUserDto): String = u.assigned.fold("")(_.toString)
 def edits(s: State) = s.edit.mapC(_.toList)

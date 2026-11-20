@@ -9,7 +9,7 @@ def initState() = State()
 
 def mounted(s: State): Unit = {
   pageTitle("管理")
-  Query.get("tab").foreach(t => s.tab := t)
+  Router.query.v.get("tab").foreach(t => s.tab := t)
 }
 
 val tabs: List[(String, String)] = List("agent" -> "エージェント", "credits" -> "クレジット", "services" -> "サービス", "repos" -> "リポジトリ", "clouds" -> "クラウド", "groups" -> "利用者の種類",

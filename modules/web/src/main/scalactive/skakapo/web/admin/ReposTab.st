@@ -20,12 +20,12 @@ def initState() = State()
 
 def mounted(s: State): Unit = {
   load(s)
-  Store.report(Api.adminServices())(xs => s.services := xs)
+  Toasts.report(Api.adminServices())(xs => s.services := xs)
 }
 
 def load(s: State): Unit = {
-  Store.report(Api.adminRepositories())(xs => s.list := xs)
-  Store.report(Api.gitAccounts())(xs => s.accounts := xs)
+  Toasts.report(Api.adminRepositories())(xs => s.list := xs)
+  Toasts.report(Api.gitAccounts())(xs => s.accounts := xs)
 }
 
 def open(s: State, x: Option[RepositoryDto]): Unit = {
@@ -40,7 +40,7 @@ def save(s: State, e: Edit): Unit =
     Option(e.account.v).filter(_.nonEmpty).map(UUID.fromString))), s.error) { s.edit := None; load(s) }
 
 def remove(s: State, x: RepositoryDto): Unit = Dialog.confirm(s"${x.name} を削除しますか？（リポジトリそのものは削除されません）", "削除") {
-  Store.report(Api.deleteRepository(x.id))(_ => load(s))
+  Toasts.report(Api.deleteRepository(x.id))(_ => load(s))
 }
 
 def openAccount(s: State, x: Option[GitAccountDto]): Unit = {
@@ -72,7 +72,7 @@ def accountUser(a: GitAccountDto): String =
 
 def removeAccount(s: State, x: GitAccountDto): Unit =
   Dialog.confirm(s"${x.name} を削除しますか？（このアカウントを使うリポジトリは、利用者の GitHub の連携に戻ります）", "削除") {
-    Store.report(Api.deleteGitAccount(x.id))(_ => load(s))
+    Toasts.report(Api.deleteGitAccount(x.id))(_ => load(s))
   }
 
 def accountName(s: State, id: Option[UUID]): String =

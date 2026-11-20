@@ -20,23 +20,20 @@ final case class Attach(atts: RV[List[AttachmentDto]] = RV(Nil), uploading: RV[I
   def upload(files: List[dom.File]): Unit = files.foreach { f =>
     val name = if (f.name.nonEmpty) f.name else "file"
     if (atts.v.size + uploading.v >= AttachmentRule.MaxCount)
-      Store.toast(s"添付は1回に${AttachmentRule.MaxCount}個までです", error = true)
+      Toasts.show(s"添付は1回に${AttachmentRule.MaxCount}個までです", error = true)
     else AttachmentRule.check(f.`type`, f.size.toLong) match {
-      case Left(e) => Store.toast(s"$name: $e", error = true)
+      case Left(e) => Toasts.show(s"$name: $e", error = true)
       case Right(_) =>
         uploading := uploading.v + 1
         Api.uploadAttachment(f, name).onComplete { r =>
           uploading := uploading.v - 1
-          r.fold(Store.error, a => atts := atts.v :+ a)
+          r.fold(Toasts.error, a => atts := atts.v :+ a)
         }
     }
   }
 
-  def pick(e: dom.Event): Unit = {
-    val input = e.target.asInstanceOf[dom.HTMLInputElement]
-    upload((0 until input.files.length).map(input.files(_)).toList)
-    input.value = ""
-  }
+  /** 選んだファイル（同じファイルを選び直せるよう、選んだ欄は空に戻る）. */
+  def pick(e: dom.Event): Unit = upload(Dom.takeFiles(e))
 
   /** 貼り付けたファイル（スクリーンショットなど）. 文字の貼り付けはそのまま. */
   def paste(e: dom.Event): Unit = {
@@ -46,7 +43,7 @@ final case class Attach(atts: RV[List[AttachmentDto]] = RV(Nil), uploading: RV[I
   }
 
   def drop(e: dom.Event): Unit = {
-    val fs = e.asInstanceOf[dom.DragEvent].dataTransfer.files
-    if (fs.length > 0) { e.preventDefault(); upload((0 until fs.length).map(fs(_)).toList) }
+    val fs = Dom.droppedFiles(e.asInstanceOf[dom.DragEvent])
+    if (fs.nonEmpty) { e.preventDefault(); upload(fs) }
   }
 }
