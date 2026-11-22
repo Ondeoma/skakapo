@@ -70,7 +70,7 @@ def usageRows(s: State) = s.usage.mapC(_.toList.flatMap(u => List(
   "キャッシュ" -> s"読み ${Fmt.tokens(u.cacheReadTokens)}・書き ${Fmt.tokens(u.cacheWriteTokens)}",
   "出力" -> Fmt.tokens(u.outputTokens))))
 def runInfo(s: State) = s.run.mapC(_.map(r =>
-  s"${r.node.map(n => s"ノード $n・").getOrElse("")}${r.turns} ターン・入力 ${Fmt.tokens(r.inputTokens)}（キャッシュ ${Fmt.tokens(r.cacheReadTokens)}）・出力 ${Fmt.tokens(r.outputTokens)}").getOrElse(""))
+  s"${r.node.map(n => s"ノード ${n}・").getOrElse("")}${r.turns} ターン・入力 ${Fmt.tokens(r.inputTokens)}（キャッシュ ${Fmt.tokens(r.cacheReadTokens)}）・出力 ${Fmt.tokens(r.outputTokens)}").getOrElse(""))
 
 def send(s: State, props: Props): Unit = {
   val t = s.text.v.trim

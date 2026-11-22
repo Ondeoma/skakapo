@@ -108,7 +108,7 @@ Scala 3（http4s・doobie・PostgreSQL）、Claude API は [Anthropic の Java S
 
 ## 開発
 
-必要なもの: JDK 21、sbt、Node.js、Docker、git。
+必要なもの: JDK 25、sbt、Node.js、Docker、git。
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --wait   # PostgreSQL（:54410。テスト用の DB skakapo_test も作る）
