@@ -24,7 +24,7 @@ object Main {
     sbirds.web.Fetch.extraHeaders = Map("X-Skakapo" -> "1")
     Observe.start()
     Pwa.register()
-    App()(dom.document.body, AddMethod.appendS(IdSelector("app"))).init()
+    App()(using dom.document.body, AddMethod.appendS(IdSelector("app"))).init()
   }
 
 }
